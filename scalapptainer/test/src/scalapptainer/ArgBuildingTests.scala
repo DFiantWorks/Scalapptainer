@@ -69,6 +69,10 @@ object ArgBuildingTests extends TestSuite {
         BuildCommand("out.sif", "def.def", sandbox = true, force = true, fakeroot = true).args ==
           Seq("build", "--sandbox", "--force", "--fakeroot", "out.sif", "def.def")
       )
+      assert(
+        BuildCommand("out.sif", "def.def", ignoreSubuid = true, mksquashfsArgs = Some("-processors 1")).args ==
+          Seq("build", "--ignore-subuid", "--mksquashfs-args", "-processors 1", "out.sif", "def.def")
+      )
     }
 
     test("InspectCommand") {

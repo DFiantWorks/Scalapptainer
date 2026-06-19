@@ -29,18 +29,14 @@ object FpgaToolsDemo:
     println(s"Backend home     : ${Apptainer.backend.home}")
 
     section("2. Pull the FPGA-tools image into a SIF")
-    // Keep the 3.6 GB SIF on the backend's native filesystem (fast), not on the
-    // /mnt/c 9p mount.
-    val sif = s"${Apptainer.backend.home}/fpga_tools.sif"
-    val sifExists = Apptainer.backend.runShell(s"test -f ${ShellQuote.single(sif)}").succeeded
-    if sifExists then println(s"Reusing existing SIF: $sif")
-    else
-      println(s"Pulling $Image\n     -> $sif  (first run downloads ~3.6 GB)")
-      Apptainer.pull(Image, dest = Some(sif), force = false).throwIfFailed()
-      println("Pull complete.")
+    // `pull` caches the SIF under ~/.scalapptainer/images (backend-native, fast) and reuses
+    // it on later runs, returning a handle we drive for the rest of the demo.
+    println(s"Pulling $Image (first run downloads ~3.6 GB; reused thereafter)")
+    val img = Apptainer.pull(Image, name = "fpga_tools")
+    println(s"Image: ${img.ref}")
 
     section("3. Image labels")
-    println(Apptainer.inspect(sif).out)
+    println(img.inspect().out)
 
     section("4. Tool versions inside the container")
     val probes = Seq(
@@ -49,7 +45,7 @@ object FpgaToolsDemo:
       "verilator" -> Seq("verilator", "--version")
     )
     for (name, cmd) <- probes do
-      val r = Apptainer.execIn(sif, cmd*)
+      val r = img.exec(cmd*)
       val line = (r.out + "\n" + r.err).linesIterator.find(_.trim.nonEmpty).getOrElse("(no output)")
       println(f"$name%-10s : ${line.trim}")
 
@@ -67,15 +63,10 @@ object FpgaToolsDemo:
     println(s"Design (ro)  : $guestDesign -> /design")
     println(s"Work   (rw)  : $guestWork -> /work")
 
-    val synth = ExecCommand(
-      sif,
-      command = Seq("yosys", "-q", "-s", "/design/synth.ys")
-    ).withOptions(
-      _.bind(BindMount(guestDesign, "/design", readOnly = true))
-        .bind(guestWork, "/work")
-    )
-
-    val res = Apptainer.run(synth)
+    val res = img
+      .bind(BindMount(guestDesign, "/design", readOnly = true))
+      .bind(guestWork, "/work")
+      .exec("yosys", "-q", "-s", "/design/synth.ys")
     if res.failed then
       println("Yosys stderr:\n" + res.err)
       sys.exit(1)
