@@ -6,6 +6,7 @@ mill           text eol=lf
 *.sh           text eol=lf
 *.scala        text eol=lf
 *.mill         text eol=lf
+Dockerfile     text eol=lf
 *.bat          text eol=crlf
 
 # The committed rpm2cpio is a POSIX script and must stay LF.

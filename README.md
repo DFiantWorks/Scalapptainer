@@ -41,14 +41,13 @@ reference; the sections most relevant here are
 
 Built with [Mill](https://mill-build.org).
 
-## Quick taste (single-file [scala-cli](https://scala-cli.virtuslab.org) scripts)
+## Quick taste (single-file scala scripts)
 
-No project, no build file. Just a `.scala` file you can run with `scala-cli run`.
+No project, no build file. Just a `.scala` file you can run with `scala run`.
 
-**Talk to a cow.** Builds a small image with `cowsay` and `fortune`, then has an ASCII cow
-read you a random fortune. The image is **~30 MB**. The first build downloads Ubuntu and
-installs the tools, so expect **~1 minute** (network-dependent). It is cached under
-`~/.scalapptainer/images`, so later runs are instant.
+**Talk to a cow.** Pulls a ready-made image and has an ASCII cow read you a random fortune.
+The image is **~30 MB**; the first run downloads and converts it (**a few seconds**,
+network-dependent), then caches it under `~/.scalapptainer/images` so later runs are instant.
 
 ```scala
 //> using scala 3.3.8
@@ -57,28 +56,19 @@ installs the tools, so expect **~1 minute** (network-dependent). It is cached un
 import scalapptainer.*
 
 @main def cow(): Unit =
-  val cowsay = Apptainer.build(
-    """Bootstrap: docker
-      |From: ubuntu:24.04
-      |%post
-      |    apt-get update && apt-get install -y --no-install-recommends cowsay fortune-mod fortunes
-      |""".stripMargin,
-    name = "cowsay",
-    enableNonRootBuild = true // build without root, via a user namespace
-  )
-  // cowsay/fortune install under /usr/games, which isn't on the default PATH.
-  println(cowsay.exec("sh", "-c", "/usr/games/fortune | /usr/games/cowsay").out)
+  Apptainer
+    .pull("docker://ghcr.io/dfiantworks/scalapptainer-cowsay")
+    .runInteractive()
 ```
 
 ```bash
-scala-cli run cow.scala
+scala run cow.scala
 ```
 
-**Run a GUI app on your desktop.** Builds a small image with `xeyes` and forwards the host
-display in with `.withX11()`, so a pair of googly eyes pops up and follows your mouse around
-the screen. The resulting image is **~45 MB**. The first build downloads Ubuntu and installs
-the app, so expect **~1 to 2 minutes** (network-dependent). It is cached, so later runs start
-instantly.
+**Run a GUI app on your desktop.** Pulls a ready-made image and forwards the host display in
+with `.withX11()`, so a pair of googly eyes pops up and follows your mouse around the screen.
+The image is **~45 MB**; the first run downloads and converts it (**a few seconds**,
+network-dependent) and caches it, so later runs start instantly.
 
 ```scala
 //> using scala 3.3.8
@@ -87,37 +77,34 @@ instantly.
 import scalapptainer.*
 
 @main def eyes(): Unit =
-  val gui = Apptainer.build(
-    """Bootstrap: docker
-      |From: ubuntu:24.04
-      |%post
-      |    apt-get update && apt-get install -y --no-install-recommends x11-apps
-      |""".stripMargin,
-    name = "xeyes",
-    enableNonRootBuild = true // build without root, via a user namespace
-  )
-  gui.withX11().run("xeyes") // googly eyes appear — close the window to finish
+  Apptainer
+    .pull("docker://ghcr.io/dfiantworks/scalapptainer-xeyes")
+    .withX11()
+    .run() // googly eyes appear — close the window to finish
 ```
 
 ```bash
-scala-cli run eyes.scala
+scala run eyes.scala
 ```
+
+> These two images ([`docker/`](docker/)) are static and published once to GHCR; the
+> `Building images` section below shows how to build your own from a definition file.
 
 The GUI demo needs a display: WSLg on Windows, a running X server on Linux, or XQuartz on
 macOS. Both scripts work unchanged on all three OSes.
 
 > While `0.1.0` is still a `-SNAPSHOT` (not yet on Maven Central), publish it locally first
-> with `./mill scalapptainer.publishLocal`. scala-cli then resolves it from your local Ivy repo.
+> with `./mill scalapptainer.publishLocal`. scala then resolves it from your local Ivy repo.
 
 ## Add to your build
 
-scala-cli (single file or `project.scala`):
+scala (single file or `project.scala`):
 
 ```scala
 //> using dep io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT
 ```
 
-Mill:
+mill:
 
 ```scala
 def mvnDeps = Seq(mvn"io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT")
