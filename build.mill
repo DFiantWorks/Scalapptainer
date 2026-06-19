@@ -1,4 +1,4 @@
-//| mill-version: 1.0.6
+//| mill-version: 1.1.6
 
 package build
 
@@ -6,14 +6,16 @@ import mill.*
 import mill.scalalib.*
 import mill.scalalib.publish.*
 
-object scalapptainer extends ScalaModule with SonatypeCentralPublishModule {
+object scalapptainer extends ScalaModule with SonatypeCentralPublishModule with mill.util.VcsVersionModule {
   def scalaVersion = "3.3.8"
 
   def mvnDeps = Seq(
     mvn"com.lihaoyi::os-lib:0.11.8"
   )
 
-  def publishVersion = "0.1.0-SNAPSHOT"
+  // publishVersion is derived from git by VcsVersionModule: a tag `v0.1.0` publishes
+  // as `0.1.0` (the leading `v` is stripped); off-tag commits get a `-<n>-<sha>`
+  // suffix. The release workflow tags a commit, so Maven Central gets a clean version.
 
   def versionScheme = Some(VersionScheme.SemVerSpec)
 
@@ -37,7 +39,7 @@ object scalapptainer extends ScalaModule with SonatypeCentralPublishModule {
 /** Small, runnable demonstrations of consuming Scalapptainer as a library:
   *   - `demo.HelloDemo` (./mill examples.run) — pull a tiny image and run commands in it;
   *   - `demo.BuildDemo` — build a minimal image from an inline def and bind-mount a file out;
-  *   - `demo.GuiDemo`   — run a GUI app (xclock) with the host display forwarded in.
+  *   - `demo.GuiDemo` — run a GUI app (xclock) with the host display forwarded in.
   */
 object examples extends ScalaModule {
   def scalaVersion = "3.3.8"

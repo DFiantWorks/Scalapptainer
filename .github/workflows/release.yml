@@ -1,0 +1,55 @@
+name: Release
+
+# Publishes scalapptainer to Maven Central (Sonatype Central Portal). The version
+# comes from the pushed tag via VcsVersionModule, so cut a release by tagging:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Requires four repository secrets (Settings -> Secrets and variables -> Actions),
+# generated once via `./mill mill.javalib.SonatypeCentralPublishModule/initGpgKeys`
+# and a user token from https://central.sonatype.com/usertoken:
+#   MILL_PGP_SECRET_BASE64, MILL_PGP_PASSPHRASE,
+#   MILL_SONATYPE_USERNAME, MILL_SONATYPE_PASSWORD
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish to Maven Central
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # VcsVersionModule derives publishVersion from the tag history, so the full
+          # history and all tags are required — a shallow checkout would version the
+          # build as 0.0.0-… instead of the released tag.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # The static curl/cpio binaries are gitignored and fetched at build time, but
+      # they ship inside the published jar (scalapptainer/resources/scalapptainer/tools).
+      # Vendor them before publishing or the released artifact is missing them on Linux.
+      - name: Vendor static installer tools (curl, cpio)
+        shell: bash
+        run: bash vendor/refresh-tools.sh
+
+      - name: Publish to Sonatype Maven Central
+        run: ./mill mill.javalib.SonatypeCentralPublishModule/
+        env:
+          MILL_PGP_SECRET_BASE64: ${{ secrets.MILL_PGP_SECRET_BASE64 }}
+          MILL_PGP_PASSPHRASE: ${{ secrets.MILL_PGP_PASSPHRASE }}
+          MILL_SONATYPE_USERNAME: ${{ secrets.MILL_SONATYPE_USERNAME }}
+          MILL_SONATYPE_PASSWORD: ${{ secrets.MILL_SONATYPE_PASSWORD }}
