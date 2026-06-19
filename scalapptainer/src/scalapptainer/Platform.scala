@@ -21,17 +21,16 @@ object Arch {
 
   /** Map the output of `uname -m` (or `os.arch`) to an [[Arch]]. */
   def parse(raw: String): Arch = raw.trim.toLowerCase match {
-    case "x86_64" | "amd64" | "x64"          => Arch.X86_64
+    case "x86_64" | "amd64" | "x64"               => Arch.X86_64
     case "aarch64" | "arm64" | "armv8" | "arm64e" => Arch.Aarch64
-    case _                                    => Arch.Other
+    case _                                        => Arch.Other
   }
 }
 
 /** Detection of the host platform.
   *
-  * Note: this describes the *host* JVM. The architecture of the Linux backend
-  * (WSL2 / Lima VM) is resolved separately at runtime via `uname -m`, since it
-  * may differ from the host (e.g. an x86_64 emulated guest on Apple Silicon).
+  * Note: this describes the *host* JVM. The architecture of the Linux backend (WSL2 / Lima VM) is resolved separately
+  * at runtime via `uname -m`, since it may differ from the host (e.g. an x86_64 emulated guest on Apple Silicon).
   */
 object Platform {
 

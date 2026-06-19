@@ -2,9 +2,9 @@ package scalapptainer
 
 /** User-overridable backend settings.
   *
-  * Defaults are read from the environment so consumers can point Scalapptainer
-  * at a specific WSL2 distro or Lima instance without code changes:
-  *   - `SCALAPPTAINER_WSL_DISTRO`  (default: the WSL default distro)
+  * Defaults are read from the environment so consumers can point Scalapptainer at a specific WSL2 distro or Lima
+  * instance without code changes:
+  *   - `SCALAPPTAINER_WSL_DISTRO` (default: the WSL default distro)
   *   - `SCALAPPTAINER_LIMA_INSTANCE` (default: `default`)
   */
 final case class BackendConfig(
@@ -16,12 +16,11 @@ object BackendConfig {
   val default: BackendConfig = BackendConfig()
 }
 
-/** A place where Apptainer can run. On Linux this is the host itself; on Windows
-  * it is a WSL2 distro; on macOS it is a Lima VM.
+/** A place where Apptainer can run. On Linux this is the host itself; on Windows it is a WSL2 distro; on macOS it is a
+  * Lima VM.
   *
-  * A backend knows how to (a) wrap an Apptainer argv into something the host can
-  * execute, (b) run an arbitrary shell snippet *inside* the backend (used for
-  * provisioning), and (c) translate host paths into backend paths.
+  * A backend knows how to (a) wrap an Apptainer argv into something the host can execute, (b) run an arbitrary shell
+  * snippet *inside* the backend (used for provisioning), and (c) translate host paths into backend paths.
   */
 abstract class Backend(val runner: CommandRunner) {
 
@@ -31,13 +30,13 @@ abstract class Backend(val runner: CommandRunner) {
   /** Human-readable backend name, e.g. "WSL2" or "Lima". */
   def name: String
 
-  /** Host-argv prefix that turns a trailing `program arg...` into an execution
-    * *inside* the backend without a shell. Empty for the native Linux backend.
+  /** Host-argv prefix that turns a trailing `program arg...` into an execution *inside* the backend without a shell.
+    * Empty for the native Linux backend.
     */
   protected def commandPrefix: Seq[String]
 
-  /** Build the host argv to run `apptainerPath` (an absolute path inside the
-    * backend) with the given Apptainer arguments.
+  /** Build the host argv to run `apptainerPath` (an absolute path inside the backend) with the given Apptainer
+    * arguments.
     */
   final def wrapApptainer(apptainerPath: String, args: Seq[String]): Seq[String] =
     commandPrefix ++ (apptainerPath +: args)
@@ -52,8 +51,8 @@ abstract class Backend(val runner: CommandRunner) {
 
   private val commandCache = scala.collection.concurrent.TrieMap.empty[String, Boolean]
 
-  /** Whether `tool` is resolvable on the backend's PATH. Memoized per tool — the
-    * probe shell-out runs at most once for each command name.
+  /** Whether `tool` is resolvable on the backend's PATH. Memoized per tool — the probe shell-out runs at most once for
+    * each command name.
     */
   final def hasCommand(tool: String): Boolean =
     commandCache.getOrElseUpdate(
@@ -76,10 +75,9 @@ abstract class Backend(val runner: CommandRunner) {
   /** Translate a host path into the path visible inside the backend. */
   def translatePath(hostPath: String): String
 
-  /** Verify the backend is usable; throw [[BackendUnavailableException]] with
-    * actionable instructions otherwise. Memoized: the probe runs once and, once it
-    * has succeeded, subsequent calls are no-ops (a failed probe is not cached, so a
-    * later call re-probes — useful if a prerequisite is started mid-session).
+  /** Verify the backend is usable; throw [[BackendUnavailableException]] with actionable instructions otherwise.
+    * Memoized: the probe runs once and, once it has succeeded, subsequent calls are no-ops (a failed probe is not
+    * cached, so a later call re-probes — useful if a prerequisite is started mid-session).
     */
   final def checkAvailable(): Unit = availabilityChecked
 
@@ -87,8 +85,8 @@ abstract class Backend(val runner: CommandRunner) {
   // while a success is remembered — exactly the semantics we want here.
   private lazy val availabilityChecked: Unit = probeAvailable()
 
-  /** Per-backend availability probe; throws [[BackendUnavailableException]] when the
-    * backend prerequisite (WSL2 / Lima) is missing. Invoked at most once on success.
+  /** Per-backend availability probe; throws [[BackendUnavailableException]] when the backend prerequisite (WSL2 / Lima)
+    * is missing. Invoked at most once on success.
     */
   protected def probeAvailable(): Unit
 
@@ -108,7 +106,7 @@ object Backend {
     case Os.Linux   => new LinuxBackend(runner)
     case Os.Windows => new Wsl2Backend(runner, config)
     case Os.MacOS   => new LimaBackend(runner, config)
-    case Os.Other =>
+    case Os.Other   =>
       throw new BackendUnavailableException(
         s"Unsupported host OS '${Platform.osName}'. Scalapptainer supports Linux, Windows (WSL2) and macOS (Lima)."
       )
@@ -126,7 +124,7 @@ final class LinuxBackend(runner: CommandRunner) extends Backend(runner) {
   protected def probeAvailable(): Unit =
     tryHost(Seq("bash", "-lc", "true")) match {
       case Some(r) if r.succeeded => ()
-      case _ =>
+      case _                      =>
         throw new BackendUnavailableException(
           "A POSIX shell ('bash') is required on the Linux host but could not be executed."
         )
@@ -142,8 +140,8 @@ final class Wsl2Backend(runner: CommandRunner, config: BackendConfig) extends Ba
 
   protected def commandPrefix: Seq[String] = Seq("wsl.exe") ++ distroOpt ++ Seq("-e")
 
-  /** Map a Windows path (e.g. `C:\Users\me\img.sif`) to its WSL path
-    * (`/mnt/c/Users/me/img.sif`). Paths that already look POSIX are passed through.
+  /** Map a Windows path (e.g. `C:\Users\me\img.sif`) to its WSL path (`/mnt/c/Users/me/img.sif`). Paths that already
+    * look POSIX are passed through.
     */
   def translatePath(hostPath: String): String = {
     val DriveLetter = """^([A-Za-z]):[\\/](.*)$""".r
@@ -159,7 +157,9 @@ final class Wsl2Backend(runner: CommandRunner, config: BackendConfig) extends Ba
     val ok = tryHost(commandPrefix :+ "true").exists(_.succeeded)
     if (!ok)
       throw new BackendUnavailableException(
-        s"""WSL2 is required to run Apptainer on Windows, but it does not appear to be available${config.wslDistro.fold("")(d => s" (distro '$d')")}.
+        s"""WSL2 is required to run Apptainer on Windows, but it does not appear to be available${config.wslDistro.fold(
+            ""
+          )(d => s" (distro '$d')")}.
            |
            |Install it from an elevated PowerShell, then restart Windows:
            |    wsl --install
@@ -181,8 +181,8 @@ final class LimaBackend(runner: CommandRunner, config: BackendConfig) extends Ba
 
   protected def commandPrefix: Seq[String] = Seq("limactl", "shell", instance)
 
-  /** Lima mounts the host home directory at the same path inside the VM, so
-    * macOS POSIX paths are already valid guest paths.
+  /** Lima mounts the host home directory at the same path inside the VM, so macOS POSIX paths are already valid guest
+    * paths.
     */
   def translatePath(hostPath: String): String = hostPath
 

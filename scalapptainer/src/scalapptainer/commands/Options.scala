@@ -18,9 +18,8 @@ object BindMount {
     BindMount(source, Some(dest), readOnly)
 }
 
-/** Options shared by the `run`, `exec` and `shell` (and `instance start`)
-  * subcommands. Build with the fluent helpers, e.g.
-  * {{{ ExecOptions().fakeroot().bind("/data", "/data").env("DEBUG" -> "1") }}}
+/** Options shared by the `run`, `exec` and `shell` (and `instance start`) subcommands. Build with the fluent helpers,
+  * e.g. {{{ExecOptions().fakeroot().bind("/data", "/data").env("DEBUG" -> "1")}}}
   */
 final case class ExecOptions(
     binds: Seq[BindMount] = Nil,

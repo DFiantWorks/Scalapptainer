@@ -39,8 +39,10 @@ object ApptainerTests extends TestSuite {
       app.run(RunCommand("img.sif").withOptions(_.fakeroot().bind("/data", "/data")))
       // toArgs renders in a fixed, deterministic order (binds before flags),
       // independent of the fluent call order above.
-      assert(r.calls.last.argv ==
-        Seq("/usr/bin/apptainer", "run", "--bind", "/data:/data", "--fakeroot", "img.sif"))
+      assert(
+        r.calls.last.argv ==
+          Seq("/usr/bin/apptainer", "run", "--bind", "/data:/data", "--fakeroot", "img.sif")
+      )
     }
 
     test("WSL2 backend routes apptainer through wsl.exe") {
@@ -65,8 +67,12 @@ object ApptainerTests extends TestSuite {
           else if (s.contains("""printf %s "$HOME"""")) ok("/home/me")
           else if (s == "uname -m") ok("x86_64")
           else if (s.startsWith("command -v ")) {
-            val tool = s.stripPrefix("command -v ").trim.takeWhile(c => c != ' ' && c != '>')
-              .stripPrefix("'").stripSuffix("'")
+            val tool = s
+              .stripPrefix("command -v ")
+              .trim
+              .takeWhile(c => c != ' ' && c != '>')
+              .stripPrefix("'")
+              .stripSuffix("'")
             if (present.contains(tool)) ok(s"/usr/bin/$tool") else fail()
           } else if (s.contains("install-unprivileged.sh")) { installed = true; ok() }
           else if (s.startsWith("test -x")) {
@@ -88,8 +94,10 @@ object ApptainerTests extends TestSuite {
       assert(installScript.contains("export PATH='/home/me/.scalapptainer/tools/bin'"))
 
       // and apptainer is then invoked from the managed install location
-      assert(r.calls.last.argv ==
-        Seq("/home/me/.scalapptainer/apptainer/bin/apptainer", "--version"))
+      assert(
+        r.calls.last.argv ==
+          Seq("/home/me/.scalapptainer/apptainer/bin/apptainer", "--version")
+      )
     }
   }
 }

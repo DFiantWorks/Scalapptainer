@@ -3,16 +3,14 @@ package fpga_demo
 import scalapptainer.*
 import scalapptainer.commands.*
 
-/** A self-contained demonstration of using Scalapptainer locally to drive the
-  * `r0d0s/fpga_tools` Docker image through Apptainer.
+/** A self-contained demonstration of using Scalapptainer locally to drive the `r0d0s/fpga_tools` Docker image through
+  * Apptainer.
   *
-  * On this Windows host the call below auto-detects the WSL2 backend, installs
-  * Apptainer in user mode on first use (using the bundled curl/rpm2cpio/cpio),
-  * pulls the OCI image into a SIF, runs the bundled FPGA tools, and finally
-  * synthesizes a small Verilog design with Yosys — writing the netlist back out
-  * to the host via a bind mount.
+  * On this Windows host the call below auto-detects the WSL2 backend, installs Apptainer in user mode on first use
+  * (using the bundled curl/rpm2cpio/cpio), pulls the OCI image into a SIF, runs the bundled FPGA tools, and finally
+  * synthesizes a small Verilog design with Yosys — writing the netlist back out to the host via a bind mount.
   *
-  * Run with:  ./mill examples.run
+  * Run with: ./mill examples.run
   */
 object FpgaToolsDemo:
 
@@ -35,8 +33,7 @@ object FpgaToolsDemo:
     // /mnt/c 9p mount.
     val sif = s"${Apptainer.backend.home}/fpga_tools.sif"
     val sifExists = Apptainer.backend.runShell(s"test -f ${ShellQuote.single(sif)}").succeeded
-    if sifExists then
-      println(s"Reusing existing SIF: $sif")
+    if sifExists then println(s"Reusing existing SIF: $sif")
     else
       println(s"Pulling $Image\n     -> $sif  (first run downloads ~3.6 GB)")
       Apptainer.pull(Image, dest = Some(sif), force = false).throwIfFailed()
@@ -47,8 +44,8 @@ object FpgaToolsDemo:
 
     section("4. Tool versions inside the container")
     val probes = Seq(
-      "yosys"     -> Seq("yosys", "--version"),
-      "iverilog"  -> Seq("iverilog", "-V"),
+      "yosys" -> Seq("yosys", "--version"),
+      "iverilog" -> Seq("iverilog", "-V"),
       "verilator" -> Seq("verilator", "--version")
     )
     for (name, cmd) <- probes do
@@ -62,11 +59,11 @@ object FpgaToolsDemo:
     // to their in-backend view (C:\... -> /mnt/c/...) and bind-mounted into the
     // container: the design read-only at /design, the work dir writable at /work.
     val designDir = os.pwd / "examples" / "resources" / "fpga_demo"
-    val workDir   = os.pwd / "examples" / "work"
+    val workDir = os.pwd / "examples" / "work"
     os.makeDir.all(workDir)
 
     val guestDesign = Apptainer.hostPath(designDir.toString)
-    val guestWork   = Apptainer.hostPath(workDir.toString)
+    val guestWork = Apptainer.hostPath(workDir.toString)
     println(s"Design (ro)  : $guestDesign -> /design")
     println(s"Work   (rw)  : $guestWork -> /work")
 

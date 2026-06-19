@@ -23,14 +23,20 @@ object ArgBuildingTests extends TestSuite {
         .arg("--no-mount", "tmp")
       assert(
         opts.toArgs == Seq(
-          "--bind", "/data:/data",
-          "--bind", "/ro:/ro:ro",
-          "--env", "A=1",       // env sorted by key for determinism
-          "--env", "B=2",
+          "--bind",
+          "/data:/data",
+          "--bind",
+          "/ro:/ro:ro",
+          "--env",
+          "A=1", // env sorted by key for determinism
+          "--env",
+          "B=2",
           "--fakeroot",
           "--nv",
-          "--workdir", "/tmp/work",
-          "--no-mount", "tmp"
+          "--workdir",
+          "/tmp/work",
+          "--no-mount",
+          "tmp"
         )
       )
     }
@@ -66,8 +72,10 @@ object ArgBuildingTests extends TestSuite {
     }
 
     test("InspectCommand") {
-      assert(InspectCommand("img.sif", labels = true, json = true).args ==
-        Seq("inspect", "--labels", "--json", "img.sif"))
+      assert(
+        InspectCommand("img.sif", labels = true, json = true).args ==
+          Seq("inspect", "--labels", "--json", "img.sif")
+      )
     }
 
     test("InstanceCommand family") {
@@ -76,8 +84,10 @@ object ArgBuildingTests extends TestSuite {
           Seq("instance", "start", "--bind", "/d:/d", "img.sif", "web")
       )
       assert(InstanceCommand.Stop("web").args == Seq("instance", "stop", "web"))
-      assert(InstanceCommand.Stop(all = true, force = true).args ==
-        Seq("instance", "stop", "--force", "--all"))
+      assert(
+        InstanceCommand.Stop(all = true, force = true).args ==
+          Seq("instance", "stop", "--force", "--all")
+      )
       assert(InstanceCommand.ListInstances(json = true).args == Seq("instance", "list", "--json"))
     }
   }

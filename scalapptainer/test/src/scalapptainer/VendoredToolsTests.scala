@@ -47,13 +47,12 @@ object VendoredToolsTests extends TestSuite {
 
     test("ensure() materialises only the missing tools via base64 pipe") {
       // Only base64 is present; curl/rpm2cpio/cpio are missing and must be vendored.
-      val r = new RecordingRunner(
-        RecordingRunner.linuxEnv(present = Set("bash", "base64"), home = "/home/me"))
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "base64"), home = "/home/me"))
       val result = VendoredTools.ensure(new LinuxBackend(r))
       assert(result.contains("/home/me/.scalapptainer/tools/bin"))
 
       val base64Calls = r.calls.filter(c => r.scriptOf(c).exists(_.contains("base64 -d")))
-      assert(base64Calls.length == 3)            // curl, rpm2cpio, cpio
+      assert(base64Calls.length == 3) // curl, rpm2cpio, cpio
       assert(base64Calls.forall(_.stdin.isDefined)) // payload fed via stdin
     }
   }
