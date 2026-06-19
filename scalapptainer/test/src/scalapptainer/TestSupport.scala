@@ -67,7 +67,7 @@ object RecordingRunner {
           .stripSuffix("'")
         if (present.contains(tool)) ok(s"/usr/bin/$tool") else fail()
       } else if (script.startsWith("test -x")) {
-        if (script.contains("/apptainer/bin/apptainer") && hasApptainer) ok() else fail()
+        if (script.contains("/bin/apptainer") && hasApptainer) ok() else fail()
       } else ok() // mkdir, base64 writes, the installer pipeline, etc.
     }
   }

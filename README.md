@@ -109,17 +109,26 @@ Apptainer (entry point)
   │     ├── wrapApptainer / runShell   (route argv into the backend)
   │     ├── translatePath              (host → guest paths)
   │     └── checkAvailable             (prerequisite probe + install instructions)
-  ├── ApptainerInstaller resolve-or-install apptainer in user mode (cached)
+  ├── ApptainerInstaller resolve-or-install the pinned apptainer in user mode (cached)
   │     └── VendoredTools  ensure curl/rpm2cpio/cpio (system-first, vendored fallback)
   └── commands.*         typed DSL → apptainer argv  (the thin `exec` runs it)
 ```
+
+### Pinned Apptainer version
+
+Each Scalapptainer release pins a specific Apptainer version (currently **1.5.1**). The
+user-mode install fetches exactly that release (`install-unprivileged.sh -v <version>`)
+and places it under `~/.scalapptainer/<version>/` inside the backend, so bumping the pin
+(e.g. to pick up an upstream fix) installs cleanly alongside the old one rather than
+overwriting it. A system-wide `apptainer` already on the backend PATH still wins.
 
 Configuration via environment variables:
 
 - `SCALAPPTAINER_WSL_DISTRO` — target a specific WSL2 distro (default: the WSL default).
 - `SCALAPPTAINER_LIMA_INSTANCE` — target a specific Lima instance (default: `default`).
+- `SCALAPPTAINER_APPTAINER_VERSION` — override the pinned Apptainer version to install.
 - `SCALAPPTAINER_INSTALLER_URL` — override the unprivileged installer script URL
-  (e.g. to pin a specific Apptainer release).
+  (default: the `install-unprivileged.sh` from the pinned release's tag).
 
 ## Building from source
 
