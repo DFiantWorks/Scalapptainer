@@ -1,15 +1,126 @@
 # Scalapptainer
 
 A cross-platform Scala 3 wrapper around [Apptainer](https://apptainer.org). Add it to
-your build and drive Apptainer containers from Scala on **Linux, Windows and macOS** —
+your build and drive Apptainer containers from Scala on **Linux, Windows and macOS**.
 Scalapptainer routes every command through the right place for your OS and installs
 Apptainer for you, in **user mode** (no root), on first use.
 
-- **Linux** — runs `apptainer` directly on the host.
-- **Windows** — runs Apptainer inside **WSL2** (via `wsl.exe`).
-- **macOS** — runs Apptainer inside a **Lima** VM (via `limactl shell`).
+## What is Apptainer, and why this library?
+
+[Apptainer](https://apptainer.org) (formerly Singularity) is a Linux container runtime
+built for **unprivileged, rootless** use. Unlike Docker it needs **no daemon and no root**.
+A whole environment is a single, immutable `.sif` file you can run, copy, archive or check
+into a release. That makes it a clean way to get a **reproducible Linux toolchain** (a
+specific compiler, simulator, CLI, or GUI app) that behaves identically on every machine.
+
+The catch is that Apptainer itself only runs on Linux, and setting it up usually means
+shell scripts and a package manager. **Scalapptainer removes all of that:**
+
+- **One dependency, three OSes.** The same Scala code runs on Linux, Windows (via WSL2)
+  and macOS (via a Lima VM). Scalapptainer detects the host and routes commands to the
+  right backend.
+- **No root, no manual install.** On first use it installs Apptainer for you in user mode,
+  and bundles the small helper tools the installer needs so even a minimal distro works.
+- **A typed, fluent API.** `pull`/`build` return an immutable image handle you configure
+  with [bind mounts](https://apptainer.org/docs/user/main/bind_paths_and_mounts.html),
+  [env vars](https://apptainer.org/docs/user/main/environment_and_metadata.html) and X11
+  forwarding, then `exec`/`run`/`shell`.
+
+So from a few lines of Scala you can pull or build a Linux environment and run programs in
+it, **including GUI apps shown on your desktop**, with reproducible results across OSes.
+
+New to Apptainer? The official [user guide](https://apptainer.org/docs/user/main/) is the
+reference; the sections most relevant here are
+[Quick start](https://apptainer.org/docs/user/main/quick_start.html),
+[Definition files](https://apptainer.org/docs/user/main/definition_files.html) and
+[Build a container](https://apptainer.org/docs/user/main/build_a_container.html).
+
+- **Linux**: runs `apptainer` directly on the host.
+- **Windows**: runs Apptainer inside **WSL2** (via `wsl.exe`).
+- **macOS**: runs Apptainer inside a **Lima** VM (via `limactl shell`).
 
 Built with [Mill](https://mill-build.org).
+
+## Quick taste (single-file [scala-cli](https://scala-cli.virtuslab.org) scripts)
+
+No project, no build file. Just a `.scala` file you can run with `scala-cli run`.
+
+**Run a command in a container.**
+[Pulls](https://apptainer.org/docs/user/main/quick_start.html#downloading-images) a tiny
+Alpine image and prints its OS info. The image is **~3 MB** and the first run takes
+**a few seconds** (just the pull). It is cached under `~/.scalapptainer/images` and reused
+afterwards.
+
+```scala
+//> using scala 3.3.8
+//> using dep io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT
+
+import scalapptainer.*
+
+@main def hello(): Unit =
+  val alpine = Apptainer.pull("docker://alpine:latest")
+  println(alpine.exec("cat", "/etc/os-release").out)
+  println(alpine.exec("uname", "-a").out)
+```
+
+```bash
+scala-cli run hello.scala
+```
+
+**Run a GUI app on your desktop.** Builds a small image with `xclock` and forwards the
+host display in with `.withX11()`, so a clock window opens on your desktop. The resulting
+image is **~45 MB**. The first build downloads Ubuntu and installs the app, so expect
+**~1 to 2 minutes** (network-dependent). It is cached, so later runs start instantly.
+
+```scala
+//> using scala 3.3.8
+//> using dep io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT
+
+import scalapptainer.*
+
+@main def clock(): Unit =
+  val gui = Apptainer.build(
+    """Bootstrap: docker
+      |From: ubuntu:24.04
+      |%post
+      |    apt-get update && apt-get install -y --no-install-recommends x11-apps
+      |""".stripMargin,
+    name = "xclock",
+    enableNonRootBuild = true, // build without root, via a user namespace
+    mksquashfsArgs = Some("-processors 1") // WSL2 + Apptainer 1.5.1: dodge a known mksquashfs segfault (#3577)
+  )
+  gui.withX11().run("xclock") // a clock window opens — close it to finish
+```
+
+```bash
+scala-cli run clock.scala
+```
+
+The GUI demo needs a display: WSLg on Windows, a running X server on Linux, or XQuartz on
+macOS. Both scripts work unchanged on all three OSes.
+
+> While `0.1.0` is still a `-SNAPSHOT` (not yet on Maven Central), publish it locally first
+> with `./mill scalapptainer.publishLocal`. scala-cli then resolves it from your local Ivy repo.
+
+## Add to your build
+
+scala-cli (single file or `project.scala`):
+
+```scala
+//> using dep io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT
+```
+
+Mill:
+
+```scala
+def mvnDeps = Seq(mvn"io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT")
+```
+
+sbt:
+
+```scala
+libraryDependencies += "io.github.dfiantworks" %% "scalapptainer" % "0.1.0-SNAPSHOT"
+```
 
 ## Prerequisites
 
@@ -25,32 +136,18 @@ require the Linux *environment* to already exist on non-Linux hosts (a one-time 
 If the required backend is missing, Scalapptainer throws a `BackendUnavailableException`
 with the exact commands to fix it.
 
-The unprivileged Apptainer installer needs `curl`, `rpm2cpio` and `cpio` inside the
-backend. Minimal distros usually lack `rpm2cpio` (and sometimes the others), and
-installing them would need root — so Scalapptainer **bundles static binaries** of these
-tools and materialises them into its per-user cache only when the system copy is absent.
-See [vendor/VENDORED-TOOLS.md](vendor/VENDORED-TOOLS.md).
-
-## Add to your build
-
-Mill:
-
-```scala
-def mvnDeps = Seq(mvn"io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT")
-```
-
-sbt:
-
-```scala
-libraryDependencies += "io.github.dfiantworks" %% "scalapptainer" % "0.1.0-SNAPSHOT"
-```
+> **You do not need to install `cpio`, `curl`, `rpm2cpio` or any other helper tools.**
+> The unprivileged Apptainer installer needs them, but Scalapptainer takes care of its own
+> install dependencies automatically: it **bundles static binaries** and materialises them
+> into its per-user cache only when a system copy is absent (system copies always win).
+> See [vendor/VENDORED-TOOLS.md](vendor/VENDORED-TOOLS.md).
 
 ## Quickstart
 
-The recommended entry point is the `Apptainer` object itself — a ready-to-use instance
+The recommended entry point is the `Apptainer` object itself, a ready-to-use instance
 bound to the auto-detected backend (native Linux / WSL2 / Lima), so there's nothing to
-construct. `pull` and `build` give you back an **`ApptainerImage`** handle — a small,
-immutable object that knows its own path and how to reach the backend — and you drive it
+construct. `pull` and `build` give you back an **`ApptainerImage`** handle, a small
+immutable object that knows its own path and how to reach the backend, and you drive it
 fluently:
 
 ```scala
@@ -75,10 +172,14 @@ alpine
 
 ### Building images
 
-`build` accepts a definition file as a **path**, a **classpath resource** (a bare name is
-looked up on the JVM classpath first — handy for `.def` files packaged with your app), or
-**inline contents**. Building a def file runs its `%post` as root; `enableNonRootBuild`
-does that unprivileged (via a user namespace), so no `sudo` is needed:
+`build` accepts a
+[definition file](https://apptainer.org/docs/user/main/definition_files.html) as a
+**path**, a **classpath resource** (a bare name is looked up on the JVM classpath first,
+handy for `.def` files packaged with your app), or **inline contents**. Building a def file
+runs its [`%post`](https://apptainer.org/docs/user/main/definition_files.html#post) as
+root; `enableNonRootBuild` does that
+[unprivileged](https://apptainer.org/docs/user/main/fakeroot.html) (via a user namespace),
+so no `sudo` is needed:
 
 ```scala
 // Inline definition file — built unprivileged, cached as ~/.scalapptainer/images/figlet.sif.
@@ -98,7 +199,7 @@ Apptainer.build("path/to/app.def", name = "app")  // a packaged resource, else a
 
 Already-built images are reused unless you pass `force = true`. To show a **GUI** app on
 your desktop, build (or pull) an image that has one and forward the host display with
-`.withX11()` — it adapts per backend (WSLg on Windows, the X11 socket on Linux, XQuartz
+`.withX11()`. It adapts per backend (WSLg on Windows, the X11 socket on Linux, XQuartz
 over TCP on macOS/Lima):
 
 ```scala
@@ -142,7 +243,7 @@ val forTest = Apptainer.forBackend(myBackend)    // bind an explicit backend
 ### Host paths
 
 When passing host paths (for bind mounts or image locations), translate them to the
-backend's view first — this is a no-op on Linux/macOS and maps `C:\...` to `/mnt/c/...`
+backend's view first. This is a no-op on Linux/macOS and maps `C:\...` to `/mnt/c/...`
 on Windows:
 
 ```scala
@@ -162,8 +263,8 @@ repo root:
 | `demo.GuiDemo` | run a GUI app (`xclock`) with the host display forwarded in via `.withX11()` | `./mill examples.runMain demo.GuiDemo` |
 
 `./mill examples.run` runs the default (`HelloDemo`). The first run of each builds or pulls
-its image (cached afterwards). `GuiDemo` needs a display — WSLg on Windows, a running X
-server on Linux, or XQuartz on macOS — and opens a clock window you close to finish. The
+its image (cached afterwards). `GuiDemo` needs a display (WSLg on Windows, a running X
+server on Linux, or XQuartz on macOS) and opens a clock window you close to finish. The
 demo sources under [examples/src/demo/](examples/src/demo/) are short and commented as a
 worked tour of the API.
 
@@ -193,10 +294,10 @@ overwriting it. A system-wide `apptainer` already on the backend PATH still wins
 
 Configuration via environment variables:
 
-- `SCALAPPTAINER_WSL_DISTRO` — target a specific WSL2 distro (default: the WSL default).
-- `SCALAPPTAINER_LIMA_INSTANCE` — target a specific Lima instance (default: `default`).
-- `SCALAPPTAINER_APPTAINER_VERSION` — override the pinned Apptainer version to install.
-- `SCALAPPTAINER_INSTALLER_URL` — override the unprivileged installer script URL
+- `SCALAPPTAINER_WSL_DISTRO`: target a specific WSL2 distro (default: the WSL default).
+- `SCALAPPTAINER_LIMA_INSTANCE`: target a specific Lima instance (default: `default`).
+- `SCALAPPTAINER_APPTAINER_VERSION`: override the pinned Apptainer version to install.
+- `SCALAPPTAINER_INSTALLER_URL`: override the unprivileged installer script URL
   (default: the `install-unprivileged.sh` from the pinned release's tag).
 
 ## Building from source
@@ -214,5 +315,5 @@ To refresh the bundled static tool binaries: `vendor/refresh-tools.sh`.
 
 ## License
 
-Apache-2.0. Bundled third-party tool binaries retain their own licenses — see
+Apache-2.0. Bundled third-party tool binaries retain their own licenses; see
 [vendor/VENDORED-TOOLS.md](vendor/VENDORED-TOOLS.md).
