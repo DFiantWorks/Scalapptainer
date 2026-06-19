@@ -76,7 +76,7 @@ object ApptainerTests extends TestSuite {
             if (present.contains(tool)) ok(s"/usr/bin/$tool") else fail()
           } else if (s.contains("install-unprivileged.sh")) { installed = true; ok() }
           else if (s.startsWith("test -x")) {
-            if (s.contains("/apptainer/bin/apptainer") && installed) ok() else fail()
+            if (s.contains("/bin/apptainer") && installed) ok() else fail()
           } else ok() // mkdir, base64 materialisation
         }
       }
@@ -88,15 +88,18 @@ object ApptainerTests extends TestSuite {
       val base64Calls = r.calls.count(c => r.scriptOf(c).exists(_.contains("base64 -d")))
       assert(base64Calls == 3)
 
-      // the unprivileged installer ran with the vendored-tools dir prepended to PATH
+      // the unprivileged installer ran with the vendored-tools dir prepended to PATH,
+      // pinning the Apptainer version via `-v`
       val installScript = r.scripts.find(_.contains("install-unprivileged.sh")).get
-      assert(installScript.contains("bash -s -"))
+      val version = ApptainerInstaller.DefaultApptainerVersion
+      assert(installScript.contains(s"bash -s - -v '$version'"))
+      assert(installScript.contains("apptainer/main/tools/install-unprivileged.sh"))
       assert(installScript.contains("export PATH='/home/me/.scalapptainer/tools/bin'"))
 
-      // and apptainer is then invoked from the managed install location
+      // and apptainer is then invoked from the per-version managed install location
       assert(
         r.calls.last.argv ==
-          Seq("/home/me/.scalapptainer/apptainer/bin/apptainer", "--version")
+          Seq(s"/home/me/.scalapptainer/$version/bin/apptainer", "--version")
       )
     }
   }
