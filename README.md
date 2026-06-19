@@ -51,7 +51,7 @@ network-dependent), then caches it under `~/.scalapptainer/images` so later runs
 
 ```scala
 //> using scala 3.3.8
-//> using dep io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT
+//> using dep io.github.dfiantworks::scalapptainer:0.1.0
 
 import scalapptainer.*
 
@@ -72,7 +72,7 @@ network-dependent) and caches it, so later runs start instantly.
 
 ```scala
 //> using scala 3.3.8
-//> using dep io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT
+//> using dep io.github.dfiantworks::scalapptainer:0.1.0
 
 import scalapptainer.*
 
@@ -93,27 +93,25 @@ scala run eyes.scala
 The GUI demo needs a display: WSLg on Windows, a running X server on Linux, or XQuartz on
 macOS. Both scripts work unchanged on all three OSes.
 
-> While `0.1.0` is still a `-SNAPSHOT` (not yet on Maven Central), publish it locally first
-> with `./mill scalapptainer.publishLocal`. scala then resolves it from your local Ivy repo.
 
 ## Add to your build
 
 scala (single file or `project.scala`):
 
 ```scala
-//> using dep io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT
+//> using dep io.github.dfiantworks::scalapptainer:0.1.0
 ```
 
 mill:
 
 ```scala
-def mvnDeps = Seq(mvn"io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT")
+def mvnDeps = Seq(mvn"io.github.dfiantworks::scalapptainer:0.1.0")
 ```
 
 sbt:
 
 ```scala
-libraryDependencies += "io.github.dfiantworks" %% "scalapptainer" % "0.1.0-SNAPSHOT"
+libraryDependencies += "io.github.dfiantworks" %% "scalapptainer" % "0.1.0"
 ```
 
 ## Prerequisites
