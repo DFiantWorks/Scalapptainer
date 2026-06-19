@@ -40,13 +40,23 @@ url_for() {
 }
 
 # Recorded SHA256 of the *materialised* binary (post-extraction). Empty => the run
-# prints the computed sum instead of verifying (use when bumping pins).
-declare -A SHA256=(
-  ["curl:x86_64"]="58c6fab6e3f62d39d23224d752de1302cb717d997288d0f23d6fa7e79c393c1f"
-  ["curl:aarch64"]="32799692a41e88f9f2be85348c2230baf5a0a29ded2d6c086e49e5cbab22b3f4"
-  ["cpio:x86_64"]="6d4ae568988ee24beb9dac4afdac4df67f90bbaed6ca47628da35ff5eb632a4c"
-  ["cpio:aarch64"]="ebd2865edcab0b590c7d0edb70d3e782cbfb541e518a390ced3a3e186509bc7f"
-)
+# prints the computed sum instead of verifying (use when bumping pins). A case
+# function (not an associative array) keeps this working on macOS's bash 3.2.
+sha_for() {
+  case "$2:$1" in   # tool:arch
+    curl:x86_64)  echo "58c6fab6e3f62d39d23224d752de1302cb717d997288d0f23d6fa7e79c393c1f" ;;
+    curl:aarch64) echo "32799692a41e88f9f2be85348c2230baf5a0a29ded2d6c086e49e5cbab22b3f4" ;;
+    cpio:x86_64)  echo "6d4ae568988ee24beb9dac4afdac4df67f90bbaed6ca47628da35ff5eb632a4c" ;;
+    cpio:aarch64) echo "ebd2865edcab0b590c7d0edb70d3e782cbfb541e518a390ced3a3e186509bc7f" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Portable SHA256 (Linux coreutils vs macOS shasum).
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  else shasum -a 256 "$1" | awk '{print $1}'; fi
+}
 
 tools=(curl cpio)
 arches=("$@"); [ ${#arches[@]} -eq 0 ] && arches=(x86_64 aarch64)
@@ -68,8 +78,8 @@ fetch() {
   chmod +x "$dest"
   rm -rf "$tmp"
 
-  sum="$(sha256sum "$dest" | awk '{print $1}')"
-  want="${SHA256[$tool:$arch]:-}"
+  sum="$(sha256_of "$dest")"
+  want="$(sha_for "$arch" "$tool")"
   if [ -z "$want" ]; then echo "   sha256=$sum  (record it)";
   elif [ "$want" != "$sum" ]; then echo "   !! checksum mismatch: got $sum want $want" >&2; exit 1;
   else echo "   sha256 ok"; fi
