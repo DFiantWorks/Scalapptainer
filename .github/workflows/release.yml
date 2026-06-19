@@ -3,7 +3,7 @@ name: Release
 # Publishes scalapptainer to Maven Central (Sonatype Central Portal). The version
 # comes from the pushed tag via VcsVersionModule, so cut a release by tagging:
 #
-#   git tag v0.1.0 && git push origin v0.1.0
+#   git tag 0.1.0 && git push origin 0.1.0
 #
 # Requires four repository secrets (Settings -> Secrets and variables -> Actions),
 # generated once via `./mill mill.javalib.SonatypeCentralPublishModule/initGpgKeys`
@@ -14,7 +14,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - '**'
   workflow_dispatch:
 
 permissions:
