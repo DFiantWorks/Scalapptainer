@@ -28,8 +28,7 @@ object BuildDemo:
     val figlet = Apptainer.build(
       definition,
       name = "figlet",
-      enableNonRootBuild = true, // build without root
-      mksquashfsArgs = Some("-processors 1") // WSL2 + Apptainer 1.5.1: dodge a known mksquashfs segfault (#3577)
+      enableNonRootBuild = true // build without root
     )
     println(s"Image: ${figlet.ref}\n")
 

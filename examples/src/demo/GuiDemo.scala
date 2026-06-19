@@ -28,8 +28,7 @@ object GuiDemo:
     val gui = Apptainer.build(
       definition,
       name = "xclock",
-      enableNonRootBuild = true,
-      mksquashfsArgs = Some("-processors 1") // WSL2 + Apptainer 1.5.1: dodge a known mksquashfs segfault (#3577)
+      enableNonRootBuild = true
     )
     println(s"Image: ${gui.ref}")
 

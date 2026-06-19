@@ -50,12 +50,29 @@ object ApptainerTests extends TestSuite {
       val app = Apptainer.forBackend(new LinuxBackend(r))
       val img = app.build("def.def", name = "tools")
       assert(img.ref == "/home/me/.scalapptainer/images/tools.sif")
-      // cache dir created, then a plain build into it
+      // cache dir created, then a build into it carrying the default parallelism cap
       assert(r.scripts.exists(_.contains("mkdir -p '/home/me/.scalapptainer/images'")))
       assert(
         r.calls.last.argv ==
-          Seq("/usr/bin/apptainer", "build", "/home/me/.scalapptainer/images/tools.sif", "def.def")
+          Seq(
+            "/usr/bin/apptainer",
+            "build",
+            "--mksquashfs-args",
+            Apptainer.defaultMksquashfsArgs,
+            "/home/me/.scalapptainer/images/tools.sif",
+            "def.def"
+          )
       )
+    }
+
+    test("build's default mksquashfs cap is -processors (cores/4, min 1) and is overridable") {
+      assert(Apptainer.defaultMksquashfsArgs == s"-processors ${math.max(1, Runtime.getRuntime.availableProcessors() / 4)}")
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.build("def.def", name = "tools", mksquashfsArgs = Some("-processors 16"))
+      // the explicit value is used verbatim, and only once (the default is not also appended)
+      assert(r.calls.last.argv.containsSlice(Seq("--mksquashfs-args", "-processors 16")))
+      assert(r.calls.last.argv.count(_ == "--mksquashfs-args") == 1)
     }
 
     test("build derives the cache name from the source basename") {
@@ -107,7 +124,16 @@ object ApptainerTests extends TestSuite {
       val app = Apptainer.forBackend(new LinuxBackend(r))
       val img = app.build("def.def", dest = Some("/elsewhere/out.sif"))
       assert(img.ref == "/elsewhere/out.sif")
-      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "build", "/elsewhere/out.sif", "def.def"))
+      assert(
+        r.calls.last.argv == Seq(
+          "/usr/bin/apptainer",
+          "build",
+          "--mksquashfs-args",
+          Apptainer.defaultMksquashfsArgs,
+          "/elsewhere/out.sif",
+          "def.def"
+        )
+      )
     }
 
     test("pull defaults into the cache, deriving the name from the URI") {
@@ -143,6 +169,8 @@ object ApptainerTests extends TestSuite {
           Seq(
             "/usr/bin/apptainer",
             "build",
+            "--mksquashfs-args",
+            Apptainer.defaultMksquashfsArgs,
             "/home/me/.scalapptainer/images/fromres.sif",
             "/home/me/.scalapptainer/build/sample.def"
           )
@@ -165,6 +193,8 @@ object ApptainerTests extends TestSuite {
           Seq(
             "/usr/bin/apptainer",
             "build",
+            "--mksquashfs-args",
+            Apptainer.defaultMksquashfsArgs,
             "/home/me/.scalapptainer/images/inline.sif",
             "/home/me/.scalapptainer/build/inline.def"
           )
@@ -196,6 +226,8 @@ object ApptainerTests extends TestSuite {
         r.calls.last.argv == Seq(
           "/usr/bin/apptainer",
           "build",
+          "--mksquashfs-args",
+          Apptainer.defaultMksquashfsArgs,
           "/home/me/.scalapptainer/images/x.sif",
           "nonexistent.def"
         )

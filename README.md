@@ -45,11 +45,10 @@ Built with [Mill](https://mill-build.org).
 
 No project, no build file. Just a `.scala` file you can run with `scala-cli run`.
 
-**Run a command in a container.**
-[Pulls](https://apptainer.org/docs/user/main/quick_start.html#downloading-images) a tiny
-Alpine image and prints its OS info. The image is **~3 MB** and the first run takes
-**a few seconds** (just the pull). It is cached under `~/.scalapptainer/images` and reused
-afterwards.
+**Talk to a cow.** Builds a small image with `cowsay` and `fortune`, then has an ASCII cow
+read you a random fortune. The image is **~30 MB**. The first build downloads Ubuntu and
+installs the tools, so expect **~1 minute** (network-dependent). It is cached under
+`~/.scalapptainer/images`, so later runs are instant.
 
 ```scala
 //> using scala 3.3.8
@@ -57,20 +56,29 @@ afterwards.
 
 import scalapptainer.*
 
-@main def hello(): Unit =
-  val alpine = Apptainer.pull("docker://alpine:latest")
-  println(alpine.exec("cat", "/etc/os-release").out)
-  println(alpine.exec("uname", "-a").out)
+@main def cow(): Unit =
+  val cowsay = Apptainer.build(
+    """Bootstrap: docker
+      |From: ubuntu:24.04
+      |%post
+      |    apt-get update && apt-get install -y --no-install-recommends cowsay fortune-mod fortunes
+      |""".stripMargin,
+    name = "cowsay",
+    enableNonRootBuild = true // build without root, via a user namespace
+  )
+  // cowsay/fortune install under /usr/games, which isn't on the default PATH.
+  println(cowsay.exec("sh", "-c", "/usr/games/fortune | /usr/games/cowsay").out)
 ```
 
 ```bash
-scala-cli run hello.scala
+scala-cli run cow.scala
 ```
 
-**Run a GUI app on your desktop.** Builds a small image with `xclock` and forwards the
-host display in with `.withX11()`, so a clock window opens on your desktop. The resulting
-image is **~45 MB**. The first build downloads Ubuntu and installs the app, so expect
-**~1 to 2 minutes** (network-dependent). It is cached, so later runs start instantly.
+**Run a GUI app on your desktop.** Builds a small image with `xeyes` and forwards the host
+display in with `.withX11()`, so a pair of googly eyes pops up and follows your mouse around
+the screen. The resulting image is **~45 MB**. The first build downloads Ubuntu and installs
+the app, so expect **~1 to 2 minutes** (network-dependent). It is cached, so later runs start
+instantly.
 
 ```scala
 //> using scala 3.3.8
@@ -78,22 +86,21 @@ image is **~45 MB**. The first build downloads Ubuntu and installs the app, so e
 
 import scalapptainer.*
 
-@main def clock(): Unit =
+@main def eyes(): Unit =
   val gui = Apptainer.build(
     """Bootstrap: docker
       |From: ubuntu:24.04
       |%post
       |    apt-get update && apt-get install -y --no-install-recommends x11-apps
       |""".stripMargin,
-    name = "xclock",
-    enableNonRootBuild = true, // build without root, via a user namespace
-    mksquashfsArgs = Some("-processors 1") // WSL2 + Apptainer 1.5.1: dodge a known mksquashfs segfault (#3577)
+    name = "xeyes",
+    enableNonRootBuild = true // build without root, via a user namespace
   )
-  gui.withX11().run("xclock") // a clock window opens — close it to finish
+  gui.withX11().run("xeyes") // googly eyes appear — close the window to finish
 ```
 
 ```bash
-scala-cli run clock.scala
+scala-cli run eyes.scala
 ```
 
 The GUI demo needs a display: WSLg on Windows, a running X server on Linux, or XQuartz on
