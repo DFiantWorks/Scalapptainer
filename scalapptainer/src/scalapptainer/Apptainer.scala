@@ -65,11 +65,42 @@ sealed class Apptainer(val backend: Backend) {
   def shell(image: String, options: ExecOptions = ExecOptions.empty): Int =
     runInteractive(ShellCommand(image, options))
 
-  def pull(uri: String, dest: Option[String] = None, force: Boolean = false): ProcResult =
-    run(PullCommand(uri, dest, force))
+  /** The directory where Scalapptainer caches built/pulled images: `~/.scalapptainer/images` inside the backend. */
+  def imagesDir: String = s"${backend.cacheDir}/images"
 
-  /** Build an image (`apptainer build <output> <source>`), where `source` is a definition file, a sandbox directory or
-    * a container URI.
+  /** Wrap an existing image reference — a local SIF path or a container URI — as an [[ApptainerImage]] handle (with no
+    * options yet).
+    */
+  def image(ref: String): ApptainerImage = new ApptainerImage(this, ref, ExecOptions.empty)
+
+  /** Pull an OCI/library image into a SIF and return a handle to it.
+    *
+    * By default the SIF lands in the image cache ([[imagesDir]]) as `<name>.sif`, where `name` is derived from the URI
+    * (e.g. `docker://r0d0s/fpga_tools:latest` -> `fpga_tools`) unless given explicitly. Pass `dest` to choose an exact
+    * output path instead. If the target already exists it is reused (no re-pull) unless `force = true`. Throws
+    * [[ApptainerCommandException]] if the pull fails.
+    */
+  def pull(
+      uri: String,
+      name: String = "",
+      dest: Option[String] = None,
+      force: Boolean = false
+  ): ApptainerImage = {
+    val output = resolveOutput(uri, name, dest)
+    val img = image(output)
+    if (!force && img.exists) img
+    else {
+      run(PullCommand(uri, Some(output), force)).throwIfFailed()
+      img
+    }
+  }
+
+  /** Build an image and return a handle to it. `source` is a definition file, a sandbox directory or a container URI.
+    *
+    * By default the SIF lands in the image cache ([[imagesDir]]) as `<name>.sif`, where `name` is derived from the
+    * source basename (e.g. `tools.def` -> `tools`) unless given explicitly. Pass `dest` to choose an exact output path
+    * instead. If the target already exists it is reused (no rebuild) unless `force = true`. Throws
+    * [[ApptainerCommandException]] if the build fails.
     *
     * Building from a *definition file* runs its `%post` as (emulated) root. Apptainer normally does this via
     * user-namespace `--fakeroot`, which needs the `newuidmap`/`newgidmap` helpers (the `uidmap` package) whenever the
@@ -78,35 +109,50 @@ sealed class Apptainer(val backend: Backend) {
     *
     * `enableNonRootBuild = true` makes an unprivileged def-file build work anyway, without needing root or `uidmap`: it
     * passes `--ignore-subuid`, so Apptainer ignores the subuid entry and builds via a root-mapped user namespace (no
-    * `newuidmap` needed), faking multi-uid ownership with its bundled `faked`.
-    *
-    * That emulated-root build is lower fidelity than real root (some `%post` operations may differ) and slower, so it
-    * is **opt-in** and prints a one-time note; for a *published* image, prefer real root (CI/Docker) or install
-    * `uidmap`. It is a no-op when building from a URI/sandbox rather than a def file.
+    * `newuidmap` needed), faking multi-uid ownership with its bundled `faked`. That emulated-root build is lower
+    * fidelity than real root (some `%post` operations may differ) and slower, so it is **opt-in** and prints a one-time
+    * note; for a *published* image, prefer real root (CI/Docker) or install `uidmap`.
     *
     * `mksquashfsArgs` is passed verbatim to the SIF-packing `mksquashfs` (e.g. `Some("-processors 1")`).
     */
   def build(
-      output: String,
       source: String,
+      name: String = "",
+      dest: Option[String] = None,
       sandbox: Boolean = false,
       force: Boolean = false,
       mksquashfsArgs: Option[String] = None,
       enableNonRootBuild: Boolean = false
-  ): ProcResult = {
-    if (enableNonRootBuild) Apptainer.warnNonRootBuildOnce()
-    run(
-      BuildCommand(
-        output,
-        source,
-        sandbox = sandbox,
-        force = force,
-        // The non-root build goes through the root-mapped (non-subuid) path, avoiding the newuidmap requirement.
-        ignoreSubuid = enableNonRootBuild,
-        mksquashfsArgs = mksquashfsArgs
-      )
-    )
+  ): ApptainerImage = {
+    val output = resolveOutput(source, name, dest)
+    val img = image(output)
+    if (!force && img.exists) img
+    else {
+      if (enableNonRootBuild) Apptainer.warnNonRootBuildOnce()
+      run(
+        BuildCommand(
+          output,
+          source,
+          sandbox = sandbox,
+          force = force,
+          // The non-root build goes through the root-mapped (non-subuid) path, avoiding the newuidmap requirement.
+          ignoreSubuid = enableNonRootBuild,
+          mksquashfsArgs = mksquashfsArgs
+        )
+      ).throwIfFailed()
+      img
+    }
   }
+
+  /** Resolve the SIF output path for [[build]] / [[pull]]: an explicit `dest`, or `<imagesDir>/<name>.sif` (creating
+    * the cache dir first), deriving `name` from `ref` when not given.
+    */
+  private def resolveOutput(ref: String, name: String, dest: Option[String]): String =
+    dest.getOrElse {
+      val n = if (name.nonEmpty) name else Apptainer.deriveName(ref)
+      backend.runShell(s"mkdir -p ${ShellQuote.single(imagesDir)}").throwIfFailed()
+      s"$imagesDir/$n.sif"
+    }
 
   def inspect(image: String): ProcResult = run(InspectCommand(image, labels = true))
 
@@ -137,6 +183,18 @@ object Apptainer extends Apptainer(Backend.detect()) {
 
   /** Create an `Apptainer` bound to an explicit backend (primarily for testing). */
   def forBackend(backend: Backend): Apptainer = new Apptainer(backend)
+
+  /** Derive a cache image name from a build source / pull URI: strip any `scheme://`, take the last path segment, then
+    * drop a `:tag` and a file extension. E.g. `docker://r0d0s/fpga_tools:latest` -> `fpga_tools`, `/a/b/tools.def` ->
+    * `tools`.
+    */
+  private[scalapptainer] def deriveName(ref: String): String = {
+    val noScheme = ref.split("://", 2).last
+    val segment = noScheme.replace('\\', '/').split('/').filter(_.nonEmpty).lastOption.getOrElse(noScheme)
+    val noTag = segment.takeWhile(_ != ':')
+    val dot = noTag.lastIndexOf('.')
+    if (dot > 0) noTag.substring(0, dot) else noTag
+  }
 
   @volatile private var nonRootBuildWarned = false
 

@@ -45,17 +45,30 @@ object ApptainerTests extends TestSuite {
       )
     }
 
-    test("build without enableNonRootBuild is a plain apptainer build") {
-      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
+    test("build defaults the SIF into the image cache and returns a handle") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
       val app = Apptainer.forBackend(new LinuxBackend(r))
-      app.build("out.sif", "def.def")
-      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "build", "out.sif", "def.def"))
+      val img = app.build("def.def", name = "tools")
+      assert(img.ref == "/home/me/.scalapptainer/images/tools.sif")
+      // cache dir created, then a plain build into it
+      assert(r.scripts.exists(_.contains("mkdir -p '/home/me/.scalapptainer/images'")))
+      assert(
+        r.calls.last.argv ==
+          Seq("/usr/bin/apptainer", "build", "/home/me/.scalapptainer/images/tools.sif", "def.def")
+      )
+    }
+
+    test("build derives the cache name from the source basename") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val img = app.build("/mnt/c/x/simio_min.def")
+      assert(img.ref == "/home/me/.scalapptainer/images/simio_min.sif")
     }
 
     test("build(enableNonRootBuild=true) passes --ignore-subuid and any mksquashfs args") {
-      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
       val app = Apptainer.forBackend(new LinuxBackend(r))
-      app.build("out.sif", "def.def", enableNonRootBuild = true, mksquashfsArgs = Some("-processors 1"))
+      app.build("def.def", name = "tools", enableNonRootBuild = true, mksquashfsArgs = Some("-processors 1"))
       assert(
         r.calls.last.argv ==
           Seq(
@@ -64,10 +77,79 @@ object ApptainerTests extends TestSuite {
             "--ignore-subuid",
             "--mksquashfs-args",
             "-processors 1",
-            "out.sif",
+            "/home/me/.scalapptainer/images/tools.sif",
             "def.def"
           )
       )
+    }
+
+    test("build reuses the cached image when it already exists (no build invoked)") {
+      val r = new RecordingRunner(
+        RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me", imageExists = true)
+      )
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val img = app.build("def.def", name = "tools")
+      assert(img.ref == "/home/me/.scalapptainer/images/tools.sif")
+      assert(!r.calls.exists(_.argv.contains("build")))
+    }
+
+    test("build(force=true) rebuilds even when the image exists") {
+      val r = new RecordingRunner(
+        RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me", imageExists = true)
+      )
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.build("def.def", name = "tools", force = true)
+      assert(r.calls.last.argv.containsSlice(Seq("build", "--force")))
+    }
+
+    test("build(dest=...) bypasses the cache and uses the explicit path") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val img = app.build("def.def", dest = Some("/elsewhere/out.sif"))
+      assert(img.ref == "/elsewhere/out.sif")
+      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "build", "/elsewhere/out.sif", "def.def"))
+    }
+
+    test("pull defaults into the cache, deriving the name from the URI") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val img = app.pull("docker://r0d0s/fpga_tools:latest")
+      assert(img.ref == "/home/me/.scalapptainer/images/fpga_tools.sif")
+      assert(
+        r.calls.last.argv ==
+          Seq(
+            "/usr/bin/apptainer",
+            "pull",
+            "/home/me/.scalapptainer/images/fpga_tools.sif",
+            "docker://r0d0s/fpga_tools:latest"
+          )
+      )
+    }
+
+    test("ApptainerImage fluent bind/env feed exec and run, immutably") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val base = app.image("/img.sif")
+      val configured = base.bind("/data", "/data").env("X" -> "1")
+      // base is unchanged (immutable)
+      assert(base.options.binds.isEmpty && base.options.env.isEmpty)
+
+      configured.exec("tool", "--v")
+      assert(
+        r.calls.last.argv ==
+          Seq("/usr/bin/apptainer", "exec", "--bind", "/data:/data", "--env", "X=1", "/img.sif", "tool", "--v")
+      )
+      configured.run("app-arg")
+      assert(
+        r.calls.last.argv ==
+          Seq("/usr/bin/apptainer", "run", "--bind", "/data:/data", "--env", "X=1", "/img.sif", "app-arg")
+      )
+    }
+
+    test("Apptainer.deriveName strips scheme, segment, tag and extension") {
+      assert(Apptainer.deriveName("docker://r0d0s/fpga_tools:latest") == "fpga_tools")
+      assert(Apptainer.deriveName("/mnt/c/x/simio_min.def") == "simio_min")
+      assert(Apptainer.deriveName("tools") == "tools")
     }
 
     test("WSL2 backend routes apptainer through wsl.exe") {

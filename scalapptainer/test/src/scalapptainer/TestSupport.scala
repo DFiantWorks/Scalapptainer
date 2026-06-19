@@ -45,7 +45,8 @@ object RecordingRunner {
       present: Set[String] = Set("bash", "curl", "rpm2cpio", "cpio", "base64"),
       home: String = "/home/me",
       uname: String = "x86_64",
-      hasApptainer: Boolean = false
+      hasApptainer: Boolean = false,
+      imageExists: Boolean = false
   ): ProcSpec => ProcResult = { spec =>
     def ok(out: String = ""): ProcResult = ProcResult(0, out, "", spec.argv)
     def fail(): ProcResult = ProcResult(1, "", "", spec.argv)
@@ -68,6 +69,8 @@ object RecordingRunner {
         if (present.contains(tool)) ok(s"/usr/bin/$tool") else fail()
       } else if (script.startsWith("test -x")) {
         if (script.contains("/bin/apptainer") && hasApptainer) ok() else fail()
+      } else if (script.startsWith("test -f")) {
+        if (imageExists) ok() else fail() // image cache existence probe (ApptainerImage.exists)
       } else ok() // mkdir, base64 writes, the installer pipeline, etc.
     }
   }
