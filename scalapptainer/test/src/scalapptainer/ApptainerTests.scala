@@ -126,6 +126,91 @@ object ApptainerTests extends TestSuite {
       )
     }
 
+    test("build resolves a bare-name source from the JVM classpath, materialising it into the backend") {
+      // scalapptainer/test/resources/sample.def is on the test classpath.
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val img = app.build("sample.def", name = "fromres")
+      assert(img.ref == "/home/me/.scalapptainer/images/fromres.sif")
+      // resource bytes were written into the backend build dir via base64,
+      val wrote = r.calls.exists(c =>
+        r.scriptOf(c).exists(s => s.contains("base64 -d") && s.contains("/home/me/.scalapptainer/build/sample.def"))
+      )
+      assert(wrote)
+      // and the build used that materialised backend path as its source.
+      assert(
+        r.calls.last.argv ==
+          Seq(
+            "/usr/bin/apptainer",
+            "build",
+            "/home/me/.scalapptainer/images/fromres.sif",
+            "/home/me/.scalapptainer/build/sample.def"
+          )
+      )
+    }
+
+    test("build accepts inline def contents, materialising them into the backend") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val img = app.build("Bootstrap: docker\nFrom: busybox\n%post\n    echo hi\n", name = "inline")
+      assert(img.ref == "/home/me/.scalapptainer/images/inline.sif")
+      // contents written to <build>/inline.def via base64, then built from there
+      assert(
+        r.calls.exists(c =>
+          r.scriptOf(c).exists(s => s.contains("base64 -d") && s.contains("/home/me/.scalapptainer/build/inline.def"))
+        )
+      )
+      assert(
+        r.calls.last.argv ==
+          Seq(
+            "/usr/bin/apptainer",
+            "build",
+            "/home/me/.scalapptainer/images/inline.sif",
+            "/home/me/.scalapptainer/build/inline.def"
+          )
+      )
+    }
+
+    test("build inline def defaults the image name to 'image' when none given") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val img = app.build("Bootstrap: docker\nFrom: busybox\n")
+      assert(img.ref == "/home/me/.scalapptainer/images/image.sif")
+    }
+
+    test("Apptainer.isInlineDef distinguishes def contents from references") {
+      assert(Apptainer.isInlineDef("Bootstrap: docker\nFrom: busybox"))
+      assert(Apptainer.isInlineDef("bootstrap: docker")) // single-line header
+      assert(!Apptainer.isInlineDef("simio_min.def"))
+      assert(!Apptainer.isInlineDef("simio_demo/simio_min.def"))
+      assert(!Apptainer.isInlineDef("/path/to/x.def"))
+      assert(!Apptainer.isInlineDef("docker://busybox"))
+    }
+
+    test("build falls back to the path when a bare-name source is not a classpath resource") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.build("nonexistent.def", name = "x")
+      assert(!r.scripts.exists(_.contains("base64 -d"))) // nothing materialised
+      assert(
+        r.calls.last.argv == Seq(
+          "/usr/bin/apptainer",
+          "build",
+          "/home/me/.scalapptainer/images/x.sif",
+          "nonexistent.def"
+        )
+      )
+    }
+
+    test("build with a ./ or absolute or URI source skips the classpath lookup") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      // sample.def IS a resource, but the explicit ./ forces filesystem use.
+      app.build("./sample.def", name = "x")
+      assert(!r.scripts.exists(_.contains("base64 -d")))
+      assert(r.calls.last.argv.last == "./sample.def")
+    }
+
     test("ApptainerImage fluent bind/env feed exec and run, immutably") {
       val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
       val app = Apptainer.forBackend(new LinuxBackend(r))

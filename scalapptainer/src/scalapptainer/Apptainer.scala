@@ -86,7 +86,7 @@ sealed class Apptainer(val backend: Backend) {
       dest: Option[String] = None,
       force: Boolean = false
   ): ApptainerImage = {
-    val output = resolveOutput(uri, name, dest)
+    val output = dest.getOrElse(cacheImagePath(if (name.nonEmpty) name else Apptainer.deriveName(uri)))
     val img = image(output)
     if (!force && img.exists) img
     else {
@@ -95,12 +95,19 @@ sealed class Apptainer(val backend: Backend) {
     }
   }
 
-  /** Build an image and return a handle to it. `source` is a definition file, a sandbox directory or a container URI.
+  /** Build an image and return a handle to it. `source` may be:
+    *   - **inline def contents** — a string holding the definition file itself (contains a newline or starts with
+    *     `Bootstrap:`); it is written into the backend and built from there;
+    *   - a **bare reference** (no leading `/`, `./`, `../`, drive letter or `scheme://`) — looked up on the JVM
+    *     classpath first, so a `.def` packaged with the app is built from; otherwise treated as a path;
+    *   - an explicit **path** (a def file or sandbox directory) or a container **URI**, used as-is.
+    *
+    * (See `resolveSource`.)
     *
     * By default the SIF lands in the image cache ([[imagesDir]]) as `<name>.sif`, where `name` is derived from the
-    * source basename (e.g. `tools.def` -> `tools`) unless given explicitly. Pass `dest` to choose an exact output path
-    * instead. If the target already exists it is reused (no rebuild) unless `force = true`. Throws
-    * [[ApptainerCommandException]] if the build fails.
+    * source basename (e.g. `tools.def` -> `tools`, defaulting to `image` for inline contents) unless given explicitly —
+    * a `name` is recommended for inline defs. Pass `dest` to choose an exact output path instead. If the target already
+    * exists it is reused (no rebuild) unless `force = true`. Throws [[ApptainerCommandException]] if the build fails.
     *
     * Building from a *definition file* runs its `%post` as (emulated) root. Apptainer normally does this via
     * user-namespace `--fakeroot`, which needs the `newuidmap`/`newgidmap` helpers (the `uidmap` package) whenever the
@@ -124,7 +131,8 @@ sealed class Apptainer(val backend: Backend) {
       mksquashfsArgs: Option[String] = None,
       enableNonRootBuild: Boolean = false
   ): ApptainerImage = {
-    val output = resolveOutput(source, name, dest)
+    val imageName = if (name.nonEmpty) name else Apptainer.defaultName(source)
+    val output = dest.getOrElse(cacheImagePath(imageName))
     val img = image(output)
     if (!force && img.exists) img
     else {
@@ -132,7 +140,7 @@ sealed class Apptainer(val backend: Backend) {
       run(
         BuildCommand(
           output,
-          source,
+          resolveSource(source, imageName),
           sandbox = sandbox,
           force = force,
           // The non-root build goes through the root-mapped (non-subuid) path, avoiding the newuidmap requirement.
@@ -144,15 +152,38 @@ sealed class Apptainer(val backend: Backend) {
     }
   }
 
-  /** Resolve the SIF output path for [[build]] / [[pull]]: an explicit `dest`, or `<imagesDir>/<name>.sif` (creating
-    * the cache dir first), deriving `name` from `ref` when not given.
+  /** The cache SIF path `<imagesDir>/<name>.sif`, creating the cache dir first. */
+  private def cacheImagePath(name: String): String = {
+    backend.runShell(s"mkdir -p ${ShellQuote.single(imagesDir)}").throwIfFailed()
+    s"$imagesDir/$name.sif"
+  }
+
+  /** Resolve a build `source` to something `apptainer build` can read:
+    *   - inline def contents -> written into the backend as `<name>.def` and built from there;
+    *   - a bare reference that matches a JVM classpath resource -> the resource is materialised into the backend;
+    *   - anything else (an explicit path, a URI, or a bare name with no matching resource) -> used unchanged.
     */
-  private def resolveOutput(ref: String, name: String, dest: Option[String]): String =
-    dest.getOrElse {
-      val n = if (name.nonEmpty) name else Apptainer.deriveName(ref)
-      backend.runShell(s"mkdir -p ${ShellQuote.single(imagesDir)}").throwIfFailed()
-      s"$imagesDir/$n.sif"
-    }
+  private def resolveSource(source: String, name: String): String =
+    if (Apptainer.isInlineDef(source))
+      materialiseDef(s"$name.def", source.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+    else if (Apptainer.looksLikePath(source)) source
+    else
+      Apptainer.resourceBytes(source) match {
+        case Some(bytes) => materialiseDef(Apptainer.basename(source), bytes)
+        case None        => source
+      }
+
+  /** Write def `bytes` to `<cacheDir>/build/<filename>` inside the backend (base64 over the backend boundary, as for
+    * the vendored tools — robust regardless of how/whether the host filesystem is mounted) and return its backend path.
+    */
+  private def materialiseDef(filename: String, bytes: Array[Byte]): String = {
+    val dir = s"${backend.cacheDir}/build"
+    val dest = s"$dir/$filename"
+    backend.runShell(s"mkdir -p ${ShellQuote.single(dir)}").throwIfFailed()
+    val b64 = java.util.Base64.getEncoder.encodeToString(bytes)
+    backend.runShell(s"base64 -d > ${ShellQuote.single(dest)}", stdin = Some(b64)).throwIfFailed()
+    dest
+  }
 
   def inspect(image: String): ProcResult = run(InspectCommand(image, labels = true))
 
@@ -194,6 +225,37 @@ object Apptainer extends Apptainer(Backend.detect()) {
     val noTag = segment.takeWhile(_ != ':')
     val dot = noTag.lastIndexOf('.')
     if (dot > 0) noTag.substring(0, dot) else noTag
+  }
+
+  /** True if `ref` is an explicit filesystem path or a container URI — so [[Apptainer.build]] uses it as-is rather than
+    * trying the classpath: an absolute path, a `./`/`../` relative path, a Windows drive path, or a `scheme://` URI.
+    */
+  private[scalapptainer] def looksLikePath(ref: String): Boolean =
+    ref.startsWith("/") || ref.startsWith("./") || ref.startsWith("../") ||
+      ref.matches("""^[A-Za-z]:[\\/].*""") || ref.contains("://")
+
+  /** True if `source` is inline definition-file *contents* rather than a reference: it spans multiple lines or starts
+    * with the `Bootstrap:` header. References (paths, URIs, resource names) are single-line and never start that way.
+    */
+  private[scalapptainer] def isInlineDef(source: String): Boolean =
+    source.contains('\n') || source.trim.toLowerCase.startsWith("bootstrap:")
+
+  /** The default cache image name for a build `source`: `image` for inline def contents, else [[deriveName]]. */
+  private[scalapptainer] def defaultName(source: String): String =
+    if (isInlineDef(source)) "image" else deriveName(source)
+
+  /** The last path segment of `ref` (its filename). */
+  private[scalapptainer] def basename(ref: String): String =
+    ref.replace('\\', '/').split('/').filter(_.nonEmpty).lastOption.getOrElse(ref)
+
+  /** Read a classpath resource as bytes, if present — trying the thread context classloader then this class's. */
+  private[scalapptainer] def resourceBytes(path: String): Option[Array[Byte]] = {
+    def read(cl: ClassLoader): Option[Array[Byte]] =
+      Option(cl).flatMap(c => Option(c.getResourceAsStream(path))).map { in =>
+        try in.readAllBytes()
+        finally in.close()
+      }
+    read(Thread.currentThread.getContextClassLoader).orElse(read(classOf[Apptainer].getClassLoader))
   }
 
   @volatile private var noDisplayWarned = false
