@@ -36,13 +36,13 @@ See [vendor/VENDORED-TOOLS.md](vendor/VENDORED-TOOLS.md).
 Mill:
 
 ```scala
-def mvnDeps = Seq(mvn"works.dfiant::scalapptainer:0.1.0-SNAPSHOT")
+def mvnDeps = Seq(mvn"io.github.dfiantworks::scalapptainer:0.1.0-SNAPSHOT")
 ```
 
 sbt:
 
 ```scala
-libraryDependencies += "works.dfiant" %% "scalapptainer" % "0.1.0-SNAPSHOT"
+libraryDependencies += "io.github.dfiantworks" %% "scalapptainer" % "0.1.0-SNAPSHOT"
 ```
 
 ## Quickstart

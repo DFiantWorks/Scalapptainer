@@ -57,19 +57,19 @@ object BackendTests extends TestSuite {
 
     test("WSL2 checkAvailable instructs to install when unavailable") {
       val r = new RecordingRunner(_ => ProcResult(1, "", "", Nil))
-      val ex = intercept[BackendUnavailableException](new Wsl2Backend(r, BackendConfig()).checkAvailable())
+      val ex = assertThrows[BackendUnavailableException](new Wsl2Backend(r, BackendConfig()).checkAvailable())
       assert(ex.getMessage.contains("wsl --install"))
     }
 
     test("WSL2 checkAvailable handles a missing wsl.exe (thrown)") {
       val r = new RecordingRunner(_ => throw new RuntimeException("not found"))
-      val ex = intercept[BackendUnavailableException](new Wsl2Backend(r, BackendConfig()).checkAvailable())
+      val ex = assertThrows[BackendUnavailableException](new Wsl2Backend(r, BackendConfig()).checkAvailable())
       assert(ex.getMessage.contains("WSL2 is required"))
     }
 
     test("Lima checkAvailable: missing limactl -> brew instructions") {
       val r = new RecordingRunner(_ => throw new RuntimeException("no limactl"))
-      val ex = intercept[BackendUnavailableException](new LimaBackend(r, BackendConfig()).checkAvailable())
+      val ex = assertThrows[BackendUnavailableException](new LimaBackend(r, BackendConfig()).checkAvailable())
       assert(ex.getMessage.contains("brew install lima"))
     }
 
@@ -81,7 +81,7 @@ object BackendTests extends TestSuite {
           case _                           => ok(spec)
         }
       )
-      val ex = intercept[BackendUnavailableException](
+      val ex = assertThrows[BackendUnavailableException](
         new LimaBackend(r, BackendConfig(limaInstance = "default")).checkAvailable()
       )
       assert(ex.getMessage.contains("limactl start default"))

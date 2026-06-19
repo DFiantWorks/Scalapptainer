@@ -6,28 +6,30 @@ import mill.*
 import mill.scalalib.*
 import mill.scalalib.publish.*
 
-object scalapptainer extends ScalaModule with PublishModule {
-  def scalaVersion = "3.3.4"
+object scalapptainer extends ScalaModule with SonatypeCentralPublishModule {
+  def scalaVersion = "3.3.8"
 
   def mvnDeps = Seq(
-    mvn"com.lihaoyi::os-lib:0.11.3"
+    mvn"com.lihaoyi::os-lib:0.11.8"
   )
 
   def publishVersion = "0.1.0-SNAPSHOT"
 
+  def versionScheme = Some(VersionScheme.SemVerSpec)
+
   def pomSettings = PomSettings(
     description = "Scalapptainer: a cross-platform Scala wrapper around Apptainer",
-    organization = "works.dfiant",
-    url = "https://github.com/dfiant/scalapptainer",
+    organization = "io.github.dfiantworks",
+    url = "https://github.com/dfiantworks/scalapptainer",
     licenses = Seq(License.`Apache-2.0`),
-    versionControl = VersionControl.github("dfiant", "scalapptainer"),
+    versionControl = VersionControl.github("dfiantworks", "scalapptainer"),
     developers = Seq(
-      Developer("oronport", "Oron Port", "https://github.com/oron-port")
+      Developer("soronpo", "Oron Port", "https://x.com/soronpo")
     )
   )
 
   object test extends ScalaTests {
-    def mvnDeps = Seq(mvn"com.lihaoyi::utest:0.8.5")
+    def mvnDeps = Seq(mvn"com.lihaoyi::utest:0.9.5")
     def testFramework = "utest.runner.Framework"
   }
 }
@@ -35,7 +37,7 @@ object scalapptainer extends ScalaModule with PublishModule {
 /** Runnable demonstrations of consuming Scalapptainer as a library. Run with: ./mill examples.run
   */
 object examples extends ScalaModule {
-  def scalaVersion = "3.3.4"
+  def scalaVersion = "3.3.8"
   def moduleDeps = Seq(scalapptainer)
   def mainClass = Some("fpga_demo.FpgaToolsDemo")
 }
