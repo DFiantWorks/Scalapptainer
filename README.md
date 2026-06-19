@@ -47,31 +47,47 @@ libraryDependencies += "works.dfiant" %% "scalapptainer" % "0.1.0-SNAPSHOT"
 
 ## Quickstart
 
+The recommended entry point is the `Apptainer` object itself — it's a ready-to-use
+instance bound to the auto-detected backend (native Linux / WSL2 / Lima), so there's
+nothing to construct:
+
 ```scala
 import scalapptainer.*
 import scalapptainer.commands.*
 
-// Auto-detects the backend (native Linux / WSL2 / Lima) for the current host.
-val apptainer = Apptainer()
-
 // Thin escape hatch: pass any apptainer arguments through.
-println(apptainer.version)                       // "apptainer version 1.x.y"
-val res = apptainer.exec(Seq("--version"))
+println(Apptainer.version)                       // "apptainer version 1.x.y"
+val res = Apptainer.exec(Seq("--version"))
 println(res.out)
 
 // Typed DSL — build commands, then run them.
-apptainer.run(
+Apptainer.run(
   RunCommand("docker://alpine:latest", appArgs = Seq("echo", "hello"))
     .withOptions(_.cleanEnv().bind("/data", "/data"))
 )
 
 // Convenience wrappers.
-apptainer.pull("docker://alpine:latest", dest = Some("alpine.sif"))
-apptainer.execIn("alpine.sif", "cat", "/etc/os-release")
-apptainer.inspect("alpine.sif")
+Apptainer.pull("docker://alpine:latest", dest = Some("alpine.sif"))
+Apptainer.execIn("alpine.sif", "cat", "/etc/os-release")
+Apptainer.inspect("alpine.sif")
 
 // Interactive shell (inherits your terminal's stdio); returns the exit code.
-val code = apptainer.shell("alpine.sif", ExecOptions().contain())
+val code = Apptainer.shell("alpine.sif", ExecOptions().contain())
+```
+
+The backend prerequisite check and the user-mode Apptainer install happen lazily on
+first actual use, so simply referencing `Apptainer` touches nothing on disk.
+
+### Custom configuration
+
+For a specific WSL2 distro / Lima instance or an injected runner (e.g. tests), build
+your own instance instead of using the default object:
+
+```scala
+val custom = Apptainer(config = BackendConfig(wslDistro = Some("Ubuntu-22.04")))
+custom.run(RunCommand("img.sif"))
+
+val forTest = Apptainer.forBackend(myBackend)    // bind an explicit backend
 ```
 
 ### Host paths
@@ -81,8 +97,8 @@ backend's view first — this is a no-op on Linux/macOS and maps `C:\...` to `/m
 on Windows:
 
 ```scala
-val guestPath = apptainer.hostPath("""C:\Users\me\data""") // -> /mnt/c/Users/me/data
-apptainer.run(RunCommand("img.sif").withOptions(_.bind(guestPath, "/data")))
+val guestPath = Apptainer.hostPath("""C:\Users\me\data""") // -> /mnt/c/Users/me/data
+Apptainer.run(RunCommand("img.sif").withOptions(_.bind(guestPath, "/data")))
 ```
 
 ## How it works
