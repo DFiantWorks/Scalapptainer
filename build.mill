@@ -34,10 +34,13 @@ object scalapptainer extends ScalaModule with SonatypeCentralPublishModule {
   }
 }
 
-/** Runnable demonstrations of consuming Scalapptainer as a library. Run with: ./mill examples.run
+/** Small, runnable demonstrations of consuming Scalapptainer as a library:
+  *   - `demo.HelloDemo` (./mill examples.run) — pull a tiny image and run commands in it;
+  *   - `demo.BuildDemo` — build a minimal image from an inline def and bind-mount a file out;
+  *   - `demo.GuiDemo`   — run a GUI app (xclock) with the host display forwarded in.
   */
 object examples extends ScalaModule {
   def scalaVersion = "3.3.8"
   def moduleDeps = Seq(scalapptainer)
-  def mainClass = Some("fpga_demo.FpgaToolsDemo")
+  def mainClass = Some("demo.HelloDemo")
 }
