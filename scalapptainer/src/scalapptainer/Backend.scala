@@ -50,9 +50,16 @@ abstract class Backend(val runner: CommandRunner) {
   final def runShell(script: String, stdin: Option[String] = None): ProcResult =
     runner.run(ProcSpec(commandPrefix ++ Seq("bash", "-lc", script), stdin = stdin))
 
-  /** Whether `tool` is resolvable on the backend's PATH. */
+  private val commandCache = scala.collection.concurrent.TrieMap.empty[String, Boolean]
+
+  /** Whether `tool` is resolvable on the backend's PATH. Memoized per tool — the
+    * probe shell-out runs at most once for each command name.
+    */
   final def hasCommand(tool: String): Boolean =
-    runShell(s"command -v ${ShellQuote.single(tool)} >/dev/null 2>&1").succeeded
+    commandCache.getOrElseUpdate(
+      tool,
+      runShell(s"command -v ${ShellQuote.single(tool)} >/dev/null 2>&1").succeeded
+    )
 
   /** The backend user's home directory (resolved once). */
   lazy val home: String = {
@@ -70,9 +77,20 @@ abstract class Backend(val runner: CommandRunner) {
   def translatePath(hostPath: String): String
 
   /** Verify the backend is usable; throw [[BackendUnavailableException]] with
-    * actionable instructions otherwise.
+    * actionable instructions otherwise. Memoized: the probe runs once and, once it
+    * has succeeded, subsequent calls are no-ops (a failed probe is not cached, so a
+    * later call re-probes — useful if a prerequisite is started mid-session).
     */
-  def checkAvailable(): Unit
+  final def checkAvailable(): Unit = availabilityChecked
+
+  // A lazy val whose initialiser throws is not cached by Scala, so failures re-probe
+  // while a success is remembered — exactly the semantics we want here.
+  private lazy val availabilityChecked: Unit = probeAvailable()
+
+  /** Per-backend availability probe; throws [[BackendUnavailableException]] when the
+    * backend prerequisite (WSL2 / Lima) is missing. Invoked at most once on success.
+    */
+  protected def probeAvailable(): Unit
 
   /** Run a host probe argv, returning None if the executable is missing or errors. */
   protected final def tryHost(argv: Seq[String]): Option[ProcResult] =
@@ -105,7 +123,7 @@ final class LinuxBackend(runner: CommandRunner) extends Backend(runner) {
 
   def translatePath(hostPath: String): String = hostPath
 
-  def checkAvailable(): Unit =
+  protected def probeAvailable(): Unit =
     tryHost(Seq("bash", "-lc", "true")) match {
       case Some(r) if r.succeeded => ()
       case _ =>
@@ -137,7 +155,7 @@ final class Wsl2Backend(runner: CommandRunner, config: BackendConfig) extends Ba
     }
   }
 
-  def checkAvailable(): Unit = {
+  protected def probeAvailable(): Unit = {
     val ok = tryHost(commandPrefix :+ "true").exists(_.succeeded)
     if (!ok)
       throw new BackendUnavailableException(
@@ -168,7 +186,7 @@ final class LimaBackend(runner: CommandRunner, config: BackendConfig) extends Ba
     */
   def translatePath(hostPath: String): String = hostPath
 
-  def checkAvailable(): Unit = {
+  protected def probeAvailable(): Unit = {
     val limaPresent = tryHost(Seq("limactl", "--version")).exists(_.succeeded)
     if (!limaPresent)
       throw new BackendUnavailableException(

@@ -13,6 +13,18 @@ object ApptainerTests extends TestSuite {
       assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "--version"))
     }
 
+    test("repeated calls probe availability and resolve apptainer only once") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.exec(Seq("--version"))
+      app.run(RunCommand("img.sif"))
+      app.exec(Seq("inspect", "img.sif"))
+      // backend availability probe (bash -lc true) ran once across three calls
+      assert(r.scripts.count(_ == "true") == 1)
+      // apptainer was resolved (command -v apptainer) once
+      assert(r.scripts.count(_ == "command -v apptainer") == 1)
+    }
+
     test("typed command dispatch builds the full apptainer argv") {
       val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
       val app = Apptainer.forBackend(new LinuxBackend(r))

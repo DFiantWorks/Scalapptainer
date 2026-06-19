@@ -90,5 +90,30 @@ object BackendTests extends TestSuite {
         })
       new LimaBackend(r, BackendConfig()).checkAvailable() // no throw
     }
+
+    test("checkAvailable is memoised: the probe runs only once") {
+      val r = new RecordingRunner(spec =>
+        if (spec.argv == Seq("wsl.exe", "-e", "true")) ok(spec) else fail(spec))
+      val b = new Wsl2Backend(r, BackendConfig())
+      b.checkAvailable(); b.checkAvailable(); b.checkAvailable()
+      assert(r.calls.count(_.argv == Seq("wsl.exe", "-e", "true")) == 1)
+    }
+
+    test("hasCommand is memoised per tool") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("git")))
+      val b = new LinuxBackend(r)
+      assert(b.hasCommand("git"), b.hasCommand("git"))      // present, queried twice
+      assert(!b.hasCommand("nope"), !b.hasCommand("nope"))  // absent, queried twice
+      val probes = r.scripts.count(_.startsWith("command -v "))
+      assert(probes == 2) // one per distinct tool, not per call
+    }
+
+    test("home and arch are resolved once") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv())
+      val b = new LinuxBackend(r)
+      b.home; b.home; b.arch; b.arch
+      assert(r.scripts.count(_.contains("""printf %s "$HOME"""")) == 1)
+      assert(r.scripts.count(_ == "uname -m") == 1)
+    }
   }
 }

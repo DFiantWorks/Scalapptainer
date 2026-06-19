@@ -76,8 +76,8 @@ final class Apptainer(
 
   // --- Misc -----------------------------------------------------------------
 
-  /** Apptainer version string, e.g. "apptainer version 1.4.1". */
-  def version: String = exec(Seq("--version")).throwIfFailed().out
+  /** Apptainer version string, e.g. "apptainer version 1.4.1" (resolved once). */
+  lazy val version: String = exec(Seq("--version")).throwIfFailed().out
 
   /** Translate a host path into the path visible inside the backend (e.g. a
     * Windows `C:\...` path into its `/mnt/c/...` WSL form), for use in bind
