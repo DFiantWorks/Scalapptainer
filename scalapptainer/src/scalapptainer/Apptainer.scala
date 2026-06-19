@@ -196,6 +196,20 @@ object Apptainer extends Apptainer(Backend.detect()) {
     if (dot > 0) noTag.substring(0, dot) else noTag
   }
 
+  @volatile private var noDisplayWarned = false
+
+  /** Warn at most once per process that [[ApptainerImage.withX11]] found no host display to forward. */
+  private[scalapptainer] def warnNoDisplayOnce(): Unit = synchronized {
+    if (!noDisplayWarned) {
+      noDisplayWarned = true
+      Console.err.println(
+        "[scalapptainer] withX11(): no host display detected on this backend (DISPLAY is unset); the container will " +
+          "run without X11 forwarding. On WSL2 ensure WSLg is available; on macOS/Lima start XQuartz with network " +
+          "clients allowed."
+      )
+    }
+  }
+
   @volatile private var nonRootBuildWarned = false
 
   /** Emit the non-root-build fidelity caveat at most once per process (see [[Apptainer.build]] `enableNonRootBuild`).

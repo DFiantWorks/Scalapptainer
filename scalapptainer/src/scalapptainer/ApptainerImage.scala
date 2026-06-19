@@ -39,6 +39,19 @@ final class ApptainerImage private[scalapptainer] (
     */
   def withOptions(f: ExecOptions => ExecOptions): ApptainerImage = updated(f(options))
 
+  /** Forward the host X11 display into the container so a GUI app renders on the host, adapting to the backend (the
+    * `/tmp/.X11-unix` socket on native Linux and WSL2/WSLg, XQuartz over TCP on macOS/Lima — see
+    * [[scalapptainer.Backend.x11Forwarding]]). Returns the image unchanged, with a one-time warning, when no display is
+    * available.
+    */
+  def withX11(): ApptainerImage = {
+    val x = apptainer.backend.x11Forwarding
+    if (x.binds.isEmpty && x.env.isEmpty) {
+      Apptainer.warnNoDisplayOnce()
+      this
+    } else updated(options.bind(x.binds*).env(x.env.toSeq*))
+  }
+
   // --- Terminal verbs (apply the accumulated options) -----------------------
 
   /** `apptainer exec [options] <image> <command...>`, capturing output. */

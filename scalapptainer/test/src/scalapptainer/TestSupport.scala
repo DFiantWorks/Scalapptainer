@@ -46,7 +46,8 @@ object RecordingRunner {
       home: String = "/home/me",
       uname: String = "x86_64",
       hasApptainer: Boolean = false,
-      imageExists: Boolean = false
+      imageExists: Boolean = false,
+      display: String = ""
   ): ProcSpec => ProcResult = { spec =>
     def ok(out: String = ""): ProcResult = ProcResult(0, out, "", spec.argv)
     def fail(): ProcResult = ProcResult(1, "", "", spec.argv)
@@ -57,6 +58,7 @@ object RecordingRunner {
       val script = spec.argv(i + 1).trim
       if (script == "true") ok()
       else if (script.contains("""printf %s "$HOME"""")) ok(home)
+      else if (script.contains("""printf %s "$DISPLAY"""")) ok(display)
       else if (script == "uname -m") ok(uname)
       else if (script.startsWith("command -v ")) {
         val tool = script

@@ -121,5 +121,25 @@ object BackendTests extends TestSuite {
       assert(r.scripts.count(_.contains("""printf %s "$HOME"""")) == 1)
       assert(r.scripts.count(_ == "uname -m") == 1)
     }
+
+    test("x11Forwarding binds the X11 socket and forwards DISPLAY on a socket backend") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(display = ":0"))
+      val x = new LinuxBackend(r).x11Forwarding
+      assert(x.env.get("DISPLAY").contains(":0"))
+      assert(x.binds.map(_.source) == Seq("/tmp/.X11-unix"))
+    }
+
+    test("x11Forwarding is empty when the backend has no DISPLAY") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(display = ""))
+      val x = new LinuxBackend(r).x11Forwarding
+      assert(x.binds.isEmpty && x.env.isEmpty)
+    }
+
+    test("Lima x11Forwarding targets XQuartz over TCP (no socket bind)") {
+      val r = new RecordingRunner(spec => ok(spec))
+      val x = new LimaBackend(r, BackendConfig()).x11Forwarding
+      assert(x.env.get("DISPLAY").contains("host.lima.internal:0"))
+      assert(x.binds.isEmpty)
+    }
   }
 }

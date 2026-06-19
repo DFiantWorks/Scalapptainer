@@ -146,6 +146,32 @@ object ApptainerTests extends TestSuite {
       )
     }
 
+    test("withX11 binds the X11 socket and forwards DISPLAY (socket backend)") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), display = ":0"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.image("/img.sif").withX11().exec("xeyes")
+      assert(
+        r.calls.last.argv ==
+          Seq(
+            "/usr/bin/apptainer",
+            "exec",
+            "--bind",
+            "/tmp/.X11-unix:/tmp/.X11-unix",
+            "--env",
+            "DISPLAY=:0",
+            "/img.sif",
+            "xeyes"
+          )
+      )
+    }
+
+    test("withX11 is a no-op when the backend has no display") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), display = ""))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.image("/img.sif").withX11().exec("tool")
+      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "exec", "/img.sif", "tool"))
+    }
+
     test("Apptainer.deriveName strips scheme, segment, tag and extension") {
       assert(Apptainer.deriveName("docker://r0d0s/fpga_tools:latest") == "fpga_tools")
       assert(Apptainer.deriveName("/mnt/c/x/simio_min.def") == "simio_min")

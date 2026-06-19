@@ -1,5 +1,7 @@
 package scalapptainer
 
+import scalapptainer.commands.ExecOptions
+
 /** User-overridable backend settings.
   *
   * Defaults are read from the environment so consumers can point Scalapptainer at a specific WSL2 distro or Lima
@@ -71,6 +73,23 @@ abstract class Backend(val runner: CommandRunner) {
 
   /** Scalapptainer's per-user cache directory inside the backend. */
   def cacheDir: String = s"$home/.scalapptainer"
+
+  /** Bind mounts + environment that forward the host X11 display into a container on this backend, so a GUI app inside
+    * the container renders on the host. Empty (no binds, no `DISPLAY`) when no display is available.
+    *
+    * The default suits an X server reachable through the `/tmp/.X11-unix` unix socket — native Linux, and WSL2's WSLg —
+    * binding that socket and passing the backend's `$DISPLAY`. Backends without a shared socket (e.g. macOS/Lima
+    * reaching XQuartz over TCP) override this.
+    */
+  def x11Forwarding: ExecOptions = {
+    val display = runShell("printf %s \"$DISPLAY\"").out
+    if (display.isEmpty) ExecOptions.empty
+    else {
+      val withDisplay = ExecOptions.empty.env("DISPLAY" -> display)
+      if (runShell("test -d /tmp/.X11-unix").succeeded) withDisplay.bind("/tmp/.X11-unix", "/tmp/.X11-unix")
+      else withDisplay
+    }
+  }
 
   /** Translate a host path into the path visible inside the backend. */
   def translatePath(hostPath: String): String
@@ -185,6 +204,13 @@ final class LimaBackend(runner: CommandRunner, config: BackendConfig) extends Ba
     * paths.
     */
   def translatePath(hostPath: String): String = hostPath
+
+  /** XQuartz runs on the macOS host and is reached over TCP from the Lima VM (there is no shared X11 unix socket), so
+    * forward `DISPLAY` to the host gateway rather than binding a socket. Requires XQuartz with "Allow connections from
+    * network clients" enabled and the VM allowed via `xhost` (e.g. `xhost + 127.0.0.1`).
+    */
+  override def x11Forwarding: ExecOptions =
+    ExecOptions.empty.env("DISPLAY" -> "host.lima.internal:0")
 
   protected def probeAvailable(): Unit = {
     val limaPresent = tryHost(Seq("limactl", "--version")).exists(_.succeeded)
