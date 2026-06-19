@@ -31,3 +31,11 @@ object scalapptainer extends ScalaModule with PublishModule {
     def testFramework = "utest.runner.Framework"
   }
 }
+
+/** Runnable demonstrations of consuming Scalapptainer as a library. Run with: ./mill examples.run
+  */
+object examples extends ScalaModule {
+  def scalaVersion = "3.3.4"
+  def moduleDeps = Seq(scalapptainer)
+  def mainClass = Some("fpga_demo.FpgaToolsDemo")
+}

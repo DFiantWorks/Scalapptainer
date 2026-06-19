@@ -1,0 +1,9 @@
+# Yosys synthesis script run inside the r0d0s/fpga_tools container.
+# Reads the host design from the read-only /design bind mount, synthesizes to a
+# generic gate-level netlist, and writes the stats + JSON netlist to the
+# writable /work bind mount so the results land on the host filesystem.
+read_verilog /design/counter.v
+hierarchy -top counter
+synth -top counter
+tee -o /work/stat.txt stat
+write_json /work/counter.netlist.json
