@@ -1,0 +1,33 @@
+//| mill-version: 1.0.6
+
+package build
+
+import mill.*
+import mill.scalalib.*
+import mill.scalalib.publish.*
+
+object scalapptainer extends ScalaModule with PublishModule {
+  def scalaVersion = "3.3.4"
+
+  def mvnDeps = Seq(
+    mvn"com.lihaoyi::os-lib:0.11.3"
+  )
+
+  def publishVersion = "0.1.0-SNAPSHOT"
+
+  def pomSettings = PomSettings(
+    description = "Scalapptainer: a cross-platform Scala wrapper around Apptainer",
+    organization = "works.dfiant",
+    url = "https://github.com/dfiant/scalapptainer",
+    licenses = Seq(License.`Apache-2.0`),
+    versionControl = VersionControl.github("dfiant", "scalapptainer"),
+    developers = Seq(
+      Developer("oronport", "Oron Port", "https://github.com/oron-port")
+    )
+  )
+
+  object test extends ScalaTests {
+    def mvnDeps = Seq(mvn"com.lihaoyi::utest:0.8.5")
+    def testFramework = "utest.runner.Framework"
+  }
+}

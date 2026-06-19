@@ -1,0 +1,20 @@
+# Mill
+/out/
+/.mill-jvm-opts
+.bsp/
+
+# IDEs
+/.idea/
+/.idea_modules/
+/.metals/
+/.bloop/
+*.iml
+
+# Vendored static tool binaries: fetched via vendor/refresh-tools.sh, not committed.
+# (rpm2cpio is a committed POSIX script and is intentionally NOT ignored.)
+scalapptainer/resources/scalapptainer/tools/linux-*/curl
+scalapptainer/resources/scalapptainer/tools/linux-*/cpio
+
+# OS
+.DS_Store
+Thumbs.db
