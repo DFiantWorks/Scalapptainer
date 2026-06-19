@@ -22,19 +22,16 @@ jobs:
         include:
           - os: ubuntu-latest
             mill: ./mill
-            run_shell: bash
             cache_path: |
               ~/.cache/coursier
               ~/.cache/mill
           - os: macos-latest
             mill: ./mill
-            run_shell: bash
             cache_path: |
               ~/Library/Caches/Coursier
               ~/.cache/mill
           - os: windows-latest
             mill: ./mill.bat
-            run_shell: pwsh
             cache_path: |
               ~/AppData/Local/Coursier/cache
               ~/.cache/mill
@@ -78,9 +75,7 @@ jobs:
         run: bash vendor/refresh-tools.sh
 
       - name: Compile
-        shell: ${{ matrix.run_shell }}
         run: ${{ matrix.mill }} scalapptainer.compile
 
       - name: Test
-        shell: ${{ matrix.run_shell }}
         run: ${{ matrix.mill }} scalapptainer.test
