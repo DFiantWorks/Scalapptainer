@@ -23,18 +23,21 @@ jobs:
           - os: ubuntu-latest
             mill: ./mill
             run_shell: bash
+            cache_path: |
+              ~/.cache/coursier
+              ~/.cache/mill
           - os: macos-latest
             mill: ./mill
             run_shell: bash
+            cache_path: |
+              ~/Library/Caches/Coursier
+              ~/.cache/mill
           - os: windows-latest
             mill: ./mill.bat
             run_shell: pwsh
-
-    env:
-      # Point Mill's launcher download and Coursier's dependency cache at fixed,
-      # cacheable locations (honoured by both ./mill and mill.bat, and coursier).
-      COURSIER_CACHE: ${{ github.workspace }}/.ci-cache/coursier
-      MILL_FINAL_DOWNLOAD_FOLDER: ${{ github.workspace }}/.ci-cache/mill
+            cache_path: |
+              ~/AppData/Local/Coursier/cache
+              ~/.cache/mill
 
     steps:
       - uses: actions/checkout@v4
@@ -45,10 +48,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Cache the Mill launcher (~/.cache/mill on every OS) and the Coursier
+      # dependency cache (OS-specific default location).
       - name: Cache Mill launcher & JVM dependencies
         uses: actions/cache@v4
         with:
-          path: .ci-cache
+          path: ${{ matrix.cache_path }}
           key: ${{ runner.os }}-mill-${{ hashFiles('build.mill', '.mill-version') }}
           restore-keys: |
             ${{ runner.os }}-mill-
