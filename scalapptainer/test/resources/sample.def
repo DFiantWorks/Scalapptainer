@@ -1,0 +1,5 @@
+Bootstrap: docker
+From: busybox
+
+%post
+    echo sample > /sample.txt

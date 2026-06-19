@@ -47,32 +47,81 @@ libraryDependencies += "io.github.dfiantworks" %% "scalapptainer" % "0.1.0-SNAPS
 
 ## Quickstart
 
-The recommended entry point is the `Apptainer` object itself — it's a ready-to-use
-instance bound to the auto-detected backend (native Linux / WSL2 / Lima), so there's
-nothing to construct:
+The recommended entry point is the `Apptainer` object itself — a ready-to-use instance
+bound to the auto-detected backend (native Linux / WSL2 / Lima), so there's nothing to
+construct. `pull` and `build` give you back an **`ApptainerImage`** handle — a small,
+immutable object that knows its own path and how to reach the backend — and you drive it
+fluently:
 
 ```scala
 import scalapptainer.*
+
+// Pull a public image. The SIF is cached under ~/.scalapptainer/images and reused on
+// later runs; `pull` returns a handle to it.
+val alpine = Apptainer.pull("docker://alpine:latest")
+
+// Run commands in it. `exec` returns the captured result; `.out` is its trimmed stdout.
+println(alpine.exec("cat", "/etc/os-release").out)
+println(alpine.exec("uname", "-a").out)
+
+// Fluent, immutable config — bind mounts, env vars, X11 — then a terminal verb
+// (exec / run / shell / inspect). Each bind/env returns a *new* handle, so `alpine`
+// above is untouched.
+alpine
+  .bind(Apptainer.hostPath("""C:\Users\me\data"""), "/data")  // host path -> /mnt/c/... on Windows
+  .env("GREETING" -> "hi")
+  .exec("sh", "-c", "echo $GREETING; ls /data")
+```
+
+### Building images
+
+`build` accepts a definition file as a **path**, a **classpath resource** (a bare name is
+looked up on the JVM classpath first — handy for `.def` files packaged with your app), or
+**inline contents**. Building a def file runs its `%post` as root; `enableNonRootBuild`
+does that unprivileged (via a user namespace), so no `sudo` is needed:
+
+```scala
+// Inline definition file — built unprivileged, cached as ~/.scalapptainer/images/figlet.sif.
+val figlet = Apptainer.build(
+  """Bootstrap: docker
+    |From: ubuntu:24.04
+    |%post
+    |    apt-get update && apt-get install -y --no-install-recommends figlet
+    |""".stripMargin,
+  name = "figlet",
+  enableNonRootBuild = true
+)
+println(figlet.exec("figlet", "Scalapptainer").out)
+
+Apptainer.build("path/to/app.def", name = "app")  // a packaged resource, else a file path
+```
+
+Already-built images are reused unless you pass `force = true`. To show a **GUI** app on
+your desktop, build (or pull) an image that has one and forward the host display with
+`.withX11()` — it adapts per backend (WSLg on Windows, the X11 socket on Linux, XQuartz
+over TCP on macOS/Lima):
+
+```scala
+val gui = Apptainer.build(
+  "Bootstrap: docker\nFrom: ubuntu:24.04\n%post\n    apt-get update && apt-get install -y x11-apps\n",
+  name = "xclock",
+  enableNonRootBuild = true
+)
+gui.withX11().run("xclock")   // a clock window opens on your desktop
+```
+
+### Low-level escape hatch
+
+Under the handle API is a thin core: pass any `apptainer` argv straight through, or build
+the typed command objects yourself.
+
+```scala
 import scalapptainer.commands.*
 
-// Thin escape hatch: pass any apptainer arguments through.
-println(Apptainer.version)                       // "apptainer version 1.x.y"
-val res = Apptainer.exec(Seq("--version"))
-println(res.out)
-
-// Typed DSL — build commands, then run them.
-Apptainer.run(
-  RunCommand("docker://alpine:latest", appArgs = Seq("echo", "hello"))
-    .withOptions(_.cleanEnv().bind("/data", "/data"))
-)
-
-// Convenience wrappers.
-Apptainer.pull("docker://alpine:latest", dest = Some("alpine.sif"))
-Apptainer.execIn("alpine.sif", "cat", "/etc/os-release")
-Apptainer.inspect("alpine.sif")
-
-// Interactive shell (inherits your terminal's stdio); returns the exit code.
-val code = Apptainer.shell("alpine.sif", ExecOptions().contain())
+println(Apptainer.version)                 // "apptainer version 1.x.y"
+Apptainer.exec(Seq("--version"))           // raw argv
+Apptainer.run(RunCommand("img.sif").withOptions(_.cleanEnv().bind("/data", "/data")))
+Apptainer.execIn("img.sif", "cat", "/etc/os-release")  // string-based convenience
 ```
 
 The backend prerequisite check and the user-mode Apptainer install happen lazily on
@@ -98,16 +147,36 @@ on Windows:
 
 ```scala
 val guestPath = Apptainer.hostPath("""C:\Users\me\data""") // -> /mnt/c/Users/me/data
-Apptainer.run(RunCommand("img.sif").withOptions(_.bind(guestPath, "/data")))
+Apptainer.image("img.sif").bind(guestPath, "/data").run()
 ```
+
+## Demos
+
+The `examples` module has three small, self-contained demos. Run them with Mill from the
+repo root:
+
+| Demo | What it shows | Run |
+|------|---------------|-----|
+| `demo.HelloDemo` | pull a tiny image and run commands in it | `./mill examples.run` |
+| `demo.BuildDemo` | build a minimal image from an inline def (unprivileged), then bind-mount a generated file back out to the host | `./mill examples.runMain demo.BuildDemo` |
+| `demo.GuiDemo` | run a GUI app (`xclock`) with the host display forwarded in via `.withX11()` | `./mill examples.runMain demo.GuiDemo` |
+
+`./mill examples.run` runs the default (`HelloDemo`). The first run of each builds or pulls
+its image (cached afterwards). `GuiDemo` needs a display — WSLg on Windows, a running X
+server on Linux, or XQuartz on macOS — and opens a clock window you close to finish. The
+demo sources under [examples/src/demo/](examples/src/demo/) are short and commented as a
+worked tour of the API.
 
 ## How it works
 
 ```
 Apptainer (entry point)
+  ├── pull / build       → ApptainerImage   (handle: bind/env/withX11 → exec/run/shell/inspect)
+  │                         images cached under ~/.scalapptainer/images
   ├── Backend            detect host → LinuxBackend | Wsl2Backend | LimaBackend
   │     ├── wrapApptainer / runShell   (route argv into the backend)
   │     ├── translatePath              (host → guest paths)
+  │     ├── x11Forwarding              (backend-aware display: socket / XQuartz-over-TCP)
   │     └── checkAvailable             (prerequisite probe + install instructions)
   ├── ApptainerInstaller resolve-or-install the pinned apptainer in user mode (cached)
   │     └── VendoredTools  ensure curl/rpm2cpio/cpio (system-first, vendored fallback)
