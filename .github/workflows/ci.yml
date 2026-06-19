@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            mill: ./mill
+            run_shell: bash
+          - os: macos-latest
+            mill: ./mill
+            run_shell: bash
+          - os: windows-latest
+            mill: ./mill.bat
+            run_shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # curl/cpio static binaries are gitignored (fetched, not committed). The
+      # tests assert they are bundled, so materialise them before building.
+      # rpm2cpio is a committed script and needs no download.
+      - name: Vendor static installer tools (curl, cpio)
+        shell: bash
+        run: bash vendor/refresh-tools.sh
+
+      - name: Compile
+        shell: ${{ matrix.run_shell }}
+        run: ${{ matrix.mill }} scalapptainer.compile
+
+      - name: Test
+        shell: ${{ matrix.run_shell }}
+        run: ${{ matrix.mill }} scalapptainer.test

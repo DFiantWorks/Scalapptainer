@@ -1,0 +1,16 @@
+# Normalise text files; keep shell scripts LF so they run under Git Bash on
+# Windows (CRLF would break `bash` and the Mill bootstrap), and keep .bat CRLF.
+* text=auto
+
+mill           text eol=lf
+*.sh           text eol=lf
+*.scala        text eol=lf
+*.mill         text eol=lf
+*.bat          text eol=crlf
+
+# The committed rpm2cpio is a POSIX script and must stay LF.
+scalapptainer/resources/scalapptainer/tools/**/rpm2cpio text eol=lf
+
+# Vendored static binaries (when present locally) are binary, not text.
+scalapptainer/resources/scalapptainer/tools/**/curl binary
+scalapptainer/resources/scalapptainer/tools/**/cpio binary
