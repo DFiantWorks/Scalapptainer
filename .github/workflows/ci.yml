@@ -30,6 +30,12 @@ jobs:
             mill: ./mill.bat
             run_shell: pwsh
 
+    env:
+      # Point Mill's launcher download and Coursier's dependency cache at fixed,
+      # cacheable locations (honoured by both ./mill and mill.bat, and coursier).
+      COURSIER_CACHE: ${{ github.workspace }}/.ci-cache/coursier
+      MILL_FINAL_DOWNLOAD_FOLDER: ${{ github.workspace }}/.ci-cache/mill
+
     steps:
       - uses: actions/checkout@v4
 
@@ -39,10 +45,30 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # curl/cpio static binaries are gitignored (fetched, not committed). The
-      # tests assert they are bundled, so materialise them before building.
-      # rpm2cpio is a committed script and needs no download.
+      - name: Cache Mill launcher & JVM dependencies
+        uses: actions/cache@v4
+        with:
+          path: .ci-cache
+          key: ${{ runner.os }}-mill-${{ hashFiles('build.mill', '.mill-version') }}
+          restore-keys: |
+            ${{ runner.os }}-mill-
+
+      # curl/cpio static binaries are gitignored (fetched, not committed). Cache
+      # them keyed on the pin/checksum table in refresh-tools.sh, and only
+      # re-download on a cache miss. rpm2cpio is committed and needs no download.
+      - name: Cache vendored installer tools
+        id: tools-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            scalapptainer/resources/scalapptainer/tools/linux-x86_64/curl
+            scalapptainer/resources/scalapptainer/tools/linux-x86_64/cpio
+            scalapptainer/resources/scalapptainer/tools/linux-aarch64/curl
+            scalapptainer/resources/scalapptainer/tools/linux-aarch64/cpio
+          key: tools-${{ hashFiles('vendor/refresh-tools.sh') }}
+
       - name: Vendor static installer tools (curl, cpio)
+        if: steps.tools-cache.outputs.cache-hit != 'true'
         shell: bash
         run: bash vendor/refresh-tools.sh
 
