@@ -13,6 +13,14 @@ object ApptainerTests extends TestSuite {
       assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "--version"))
     }
 
+    test("companion object is a default instance bound to the detected backend") {
+      // Referencing the object initialises the auto-detected default. This only
+      // runs Backend.detect() (no subprocess); the prerequisite check and install
+      // stay lazy, so no real WSL2/Lima/apptainer is touched here.
+      val app: Apptainer = Apptainer
+      assert(app.backend.os == Platform.os)
+    }
+
     test("repeated calls probe availability and resolve apptainer only once") {
       val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
       val app = Apptainer.forBackend(new LinuxBackend(r))

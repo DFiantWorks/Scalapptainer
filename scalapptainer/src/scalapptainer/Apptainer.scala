@@ -4,20 +4,22 @@ import scalapptainer.commands.*
 
 /** The main entry point to Scalapptainer.
   *
-  * An `Apptainer` is bound to a [[Backend]] (auto-detected from the host OS) and an
-  * [[ApptainerInstaller]] that lazily provisions Apptainer in user mode on first use.
-  * It exposes two layers:
+  * An `Apptainer` is bound to a [[Backend]] and lazily provisions Apptainer in user
+  * mode (via [[ApptainerInstaller]]) on first use. It exposes two layers:
   *
   *   - a thin escape hatch — [[exec]] / [[shell]] — taking a raw argv; and
   *   - a typed DSL — [[run]] of an [[scalapptainer.commands.ApptainerCommand]] plus
   *     the convenience wrappers ([[pull]], [[build]], [[inspect]], ...).
   *
-  * Construct one with `Apptainer()` (auto-detect) or the explicit constructor for tests.
+  * The companion `object Apptainer` is itself a ready-to-use instance bound to the
+  * auto-detected backend, so `Apptainer.run(...)`, `Apptainer.version`, etc. work
+  * directly. Use `Apptainer(...)` for a custom runner/config or `Apptainer.forBackend`
+  * to bind an explicit backend (e.g. in tests).
   */
-final class Apptainer(
-    val backend: Backend,
-    val installer: ApptainerInstaller
-) {
+sealed class Apptainer(val backend: Backend) {
+
+  /** Provisions and resolves Apptainer inside [[backend]] (in user mode), memoized. */
+  val installer: ApptainerInstaller = new ApptainerInstaller(backend)
 
   /** Verify the backend prerequisite is present (throws
     * [[BackendUnavailableException]] with install instructions otherwise).
@@ -86,20 +88,21 @@ final class Apptainer(
   def hostPath(path: String): String = backend.translatePath(path)
 }
 
-object Apptainer {
+/** The default, ready-to-use `Apptainer`, bound to the auto-detected backend
+  * (native Linux / WSL2 / Lima). `Apptainer.run(...)`, `Apptainer.version`, etc.
+  * operate on this instance; its backend prerequisite check and user-mode install
+  * still happen lazily on first actual use.
+  */
+object Apptainer extends Apptainer(Backend.detect()) {
 
-  /** Create an `Apptainer` for the current host, auto-detecting the backend
-    * (native Linux / WSL2 / Lima).
+  /** Create an `Apptainer` for the current host with a custom runner/config,
+    * auto-detecting the backend (native Linux / WSL2 / Lima).
     */
   def apply(
       runner: CommandRunner = CommandRunner.default,
       config: BackendConfig = BackendConfig.default
-  ): Apptainer = {
-    val backend = Backend.detect(runner, config)
-    new Apptainer(backend, new ApptainerInstaller(backend))
-  }
+  ): Apptainer = new Apptainer(Backend.detect(runner, config))
 
   /** Create an `Apptainer` bound to an explicit backend (primarily for testing). */
-  def forBackend(backend: Backend): Apptainer =
-    new Apptainer(backend, new ApptainerInstaller(backend))
+  def forBackend(backend: Backend): Apptainer = new Apptainer(backend)
 }
