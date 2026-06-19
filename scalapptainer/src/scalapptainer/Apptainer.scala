@@ -68,8 +68,45 @@ sealed class Apptainer(val backend: Backend) {
   def pull(uri: String, dest: Option[String] = None, force: Boolean = false): ProcResult =
     run(PullCommand(uri, dest, force))
 
-  def build(output: String, source: String, sandbox: Boolean = false, force: Boolean = false): ProcResult =
-    run(BuildCommand(output, source, sandbox = sandbox, force = force))
+  /** Build an image (`apptainer build <output> <source>`), where `source` is a definition file, a sandbox directory or
+    * a container URI.
+    *
+    * Building from a *definition file* runs its `%post` as (emulated) root. Apptainer normally does this via
+    * user-namespace `--fakeroot`, which needs the `newuidmap`/`newgidmap` helpers (the `uidmap` package) whenever the
+    * user has an `/etc/subuid` entry. On a host with such an entry but without those helpers — and no root to install
+    * them — that path fails hard.
+    *
+    * `enableNonRootBuild = true` makes an unprivileged def-file build work anyway, without needing root or `uidmap`: it
+    * passes `--ignore-subuid`, so Apptainer ignores the subuid entry and builds via a root-mapped user namespace (no
+    * `newuidmap` needed), faking multi-uid ownership with its bundled `faked`.
+    *
+    * That emulated-root build is lower fidelity than real root (some `%post` operations may differ) and slower, so it
+    * is **opt-in** and prints a one-time note; for a *published* image, prefer real root (CI/Docker) or install
+    * `uidmap`. It is a no-op when building from a URI/sandbox rather than a def file.
+    *
+    * `mksquashfsArgs` is passed verbatim to the SIF-packing `mksquashfs` (e.g. `Some("-processors 1")`).
+    */
+  def build(
+      output: String,
+      source: String,
+      sandbox: Boolean = false,
+      force: Boolean = false,
+      mksquashfsArgs: Option[String] = None,
+      enableNonRootBuild: Boolean = false
+  ): ProcResult = {
+    if (enableNonRootBuild) Apptainer.warnNonRootBuildOnce()
+    run(
+      BuildCommand(
+        output,
+        source,
+        sandbox = sandbox,
+        force = force,
+        // The non-root build goes through the root-mapped (non-subuid) path, avoiding the newuidmap requirement.
+        ignoreSubuid = enableNonRootBuild,
+        mksquashfsArgs = mksquashfsArgs
+      )
+    )
+  }
 
   def inspect(image: String): ProcResult = run(InspectCommand(image, labels = true))
 
@@ -100,4 +137,19 @@ object Apptainer extends Apptainer(Backend.detect()) {
 
   /** Create an `Apptainer` bound to an explicit backend (primarily for testing). */
   def forBackend(backend: Backend): Apptainer = new Apptainer(backend)
+
+  @volatile private var nonRootBuildWarned = false
+
+  /** Emit the non-root-build fidelity caveat at most once per process (see [[Apptainer.build]] `enableNonRootBuild`).
+    */
+  private[scalapptainer] def warnNonRootBuildOnce(): Unit = synchronized {
+    if (!nonRootBuildWarned) {
+      nonRootBuildWarned = true
+      Console.err.println(
+        "[scalapptainer] enableNonRootBuild=true: building unprivileged with emulated root (root-mapped namespace + " +
+          "faked). Ownership/capabilities may be imperfect and the build is slower. For higher fidelity install the " +
+          "'uidmap' package on the backend, or build with real root in CI/Docker."
+      )
+    }
+  }
 }

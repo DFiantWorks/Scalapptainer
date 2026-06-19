@@ -58,15 +58,24 @@ final case class PullCommand(
   }
 }
 
-/** `apptainer build [--sandbox] [--force] [--fakeroot] <output> <source>` where `source` is a definition file, a
-  * sandbox directory, or a container URI.
+/** `apptainer build [--sandbox] [--force] [--fakeroot] [--ignore-subuid] [--mksquashfs-args A] <output> <source>` where
+  * `source` is a definition file, a sandbox directory, or a container URI.
+  *
+  * @param ignoreSubuid
+  *   pass `--ignore-subuid`: ignore any `/etc/subuid` mapping and build via a root-mapped user namespace instead of
+  *   subuid-range fakeroot. This avoids the `newuidmap`/`newgidmap` helpers (the `uidmap` package), so an unprivileged
+  *   def-file build works on hosts that have a subuid entry but lack those helpers.
+  * @param mksquashfsArgs
+  *   pass `--mksquashfs-args` verbatim to the `mksquashfs` invocation that packs the SIF (e.g. `"-processors 1"`).
   */
 final case class BuildCommand(
     output: String,
     source: String,
     sandbox: Boolean = false,
     force: Boolean = false,
-    fakeroot: Boolean = false
+    fakeroot: Boolean = false,
+    ignoreSubuid: Boolean = false,
+    mksquashfsArgs: Option[String] = None
 ) extends ApptainerCommand {
   def args: Seq[String] = {
     val b = Seq.newBuilder[String]
@@ -74,6 +83,8 @@ final case class BuildCommand(
     if (sandbox) b += "--sandbox"
     if (force) b += "--force"
     if (fakeroot) b += "--fakeroot"
+    if (ignoreSubuid) b += "--ignore-subuid"
+    mksquashfsArgs.foreach { a => b += "--mksquashfs-args"; b += a }
     b += output
     b += source
     b.result()

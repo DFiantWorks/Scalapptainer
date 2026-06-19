@@ -45,6 +45,31 @@ object ApptainerTests extends TestSuite {
       )
     }
 
+    test("build without enableNonRootBuild is a plain apptainer build") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.build("out.sif", "def.def")
+      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "build", "out.sif", "def.def"))
+    }
+
+    test("build(enableNonRootBuild=true) passes --ignore-subuid and any mksquashfs args") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.build("out.sif", "def.def", enableNonRootBuild = true, mksquashfsArgs = Some("-processors 1"))
+      assert(
+        r.calls.last.argv ==
+          Seq(
+            "/usr/bin/apptainer",
+            "build",
+            "--ignore-subuid",
+            "--mksquashfs-args",
+            "-processors 1",
+            "out.sif",
+            "def.def"
+          )
+      )
+    }
+
     test("WSL2 backend routes apptainer through wsl.exe") {
       val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
       val app = Apptainer.forBackend(new Wsl2Backend(r, BackendConfig()))
