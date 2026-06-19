@@ -1,12 +1,15 @@
 package scalapptainer
 
-/** The result of running a command on the host (which may itself be a wrapped
-  * invocation into a WSL2/Lima backend).
+/** The result of running a command on the host (which may itself be a wrapped invocation into a WSL2/Lima backend).
   *
-  * @param exitCode process exit code
-  * @param stdout   captured standard output
-  * @param stderr   captured standard error
-  * @param command  the host argv that was executed (useful for diagnostics)
+  * @param exitCode
+  *   process exit code
+  * @param stdout
+  *   captured standard output
+  * @param stderr
+  *   captured standard error
+  * @param command
+  *   the host argv that was executed (useful for diagnostics)
   */
 final case class ProcResult(
     exitCode: Int,

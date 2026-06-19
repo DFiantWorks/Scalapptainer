@@ -1,13 +1,13 @@
 package scalapptainer
 
-/** Ensures an `apptainer` executable is available inside a [[Backend]], installing
-  * it in user mode (no root) on first use, and caches the resolved path.
+/** Ensures an `apptainer` executable is available inside a [[Backend]], installing it in user mode (no root) on first
+  * use, and caches the resolved path.
   *
   * Resolution order:
   *   1. an `apptainer` already on the backend PATH (e.g. a system install);
   *   2. a previous Scalapptainer-managed install under the backend cache;
-  *   3. a fresh unprivileged install via Apptainer's `install-unprivileged.sh`,
-  *      run with [[VendoredTools]] on PATH so `curl`/`rpm2cpio`/`cpio` are present.
+  *   3. a fresh unprivileged install via Apptainer's `install-unprivileged.sh`, run with [[VendoredTools]] on PATH so
+  *      `curl`/`rpm2cpio`/`cpio` are present.
   */
 final class ApptainerInstaller(
     backend: Backend,
@@ -19,7 +19,7 @@ final class ApptainerInstaller(
   /** Absolute path to a usable `apptainer` inside the backend, installing if needed. */
   def ensure(): String = resolved match {
     case Some(p) => p
-    case None =>
+    case None    =>
       synchronized {
         resolved.getOrElse {
           val p = resolve()
@@ -74,8 +74,8 @@ final class ApptainerInstaller(
 
 object ApptainerInstaller {
 
-  /** Where the unprivileged installer script is fetched from. Overridable via
-    * `SCALAPPTAINER_INSTALLER_URL` (e.g. to pin a specific Apptainer release tag).
+  /** Where the unprivileged installer script is fetched from. Overridable via `SCALAPPTAINER_INSTALLER_URL` (e.g. to
+    * pin a specific Apptainer release tag).
     */
   def defaultInstallerUrl: String =
     sys.env.getOrElse(

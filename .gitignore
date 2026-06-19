@@ -15,6 +15,9 @@
 scalapptainer/resources/scalapptainer/tools/linux-*/curl
 scalapptainer/resources/scalapptainer/tools/linux-*/cpio
 
+# Demo synthesis outputs (runtime-only work dir)
+/examples/work/
+
 # OS
 .DS_Store
 Thumbs.db

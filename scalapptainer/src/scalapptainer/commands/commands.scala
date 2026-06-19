@@ -1,8 +1,7 @@
 package scalapptainer.commands
 
-/** A typed Apptainer command. `args` is the full argv passed to `apptainer`
-  * (subcommand, options and operands) — i.e. everything after the `apptainer`
-  * binary itself. The thin core ([[scalapptainer.Apptainer.exec]]) executes it.
+/** A typed Apptainer command. `args` is the full argv passed to `apptainer` (subcommand, options and operands) — i.e.
+  * everything after the `apptainer` binary itself. The thin core ([[scalapptainer.Apptainer.exec]]) executes it.
   */
 sealed trait ApptainerCommand {
   def args: Seq[String]
@@ -59,8 +58,8 @@ final case class PullCommand(
   }
 }
 
-/** `apptainer build [--sandbox] [--force] [--fakeroot] <output> <source>`
-  * where `source` is a definition file, a sandbox directory, or a container URI.
+/** `apptainer build [--sandbox] [--force] [--fakeroot] <output> <source>` where `source` is a definition file, a
+  * sandbox directory, or a container URI.
   */
 final case class BuildCommand(
     output: String,

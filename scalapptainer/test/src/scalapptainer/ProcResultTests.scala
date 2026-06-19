@@ -23,7 +23,7 @@ object ProcResultTests extends TestSuite {
 
     test("throwIfFailed throws with diagnostics when failed") {
       val r = ProcResult(3, "", "the error", Seq("apptainer", "run"))
-      val ex = intercept[ApptainerCommandException](r.throwIfFailed())
+      val ex = assertThrows[ApptainerCommandException](r.throwIfFailed())
       assert(ex.result eq r)
       assert(ex.getMessage.contains("exit code 3"))
       assert(ex.getMessage.contains("the error"))

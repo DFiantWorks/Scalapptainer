@@ -2,9 +2,8 @@ package scalapptainer
 
 import scala.collection.mutable
 
-/** A [[CommandRunner]] that records every invocation and answers via a pluggable
-  * handler, so backend / installer / vendored-tools logic can be exercised with no
-  * real WSL2, Lima or Apptainer present.
+/** A [[CommandRunner]] that records every invocation and answers via a pluggable handler, so backend / installer /
+  * vendored-tools logic can be exercised with no real WSL2, Lima or Apptainer present.
   */
 class RecordingRunner(handler: ProcSpec => ProcResult) extends CommandRunner {
   val calls: mutable.ArrayBuffer[ProcSpec] = mutable.ArrayBuffer.empty
@@ -33,10 +32,14 @@ object RecordingRunner {
 
   /** A handler that simulates a Linux backend environment.
     *
-    * @param present     commands resolvable on the backend PATH (`command -v`)
-    * @param home        value of `$HOME`
-    * @param uname       output of `uname -m`
-    * @param hasApptainer whether a Scalapptainer-managed apptainer already exists
+    * @param present
+    *   commands resolvable on the backend PATH (`command -v`)
+    * @param home
+    *   value of `$HOME`
+    * @param uname
+    *   output of `uname -m`
+    * @param hasApptainer
+    *   whether a Scalapptainer-managed apptainer already exists
     */
   def linuxEnv(
       present: Set[String] = Set("bash", "curl", "rpm2cpio", "cpio", "base64"),
@@ -55,7 +58,9 @@ object RecordingRunner {
       else if (script.contains("""printf %s "$HOME"""")) ok(home)
       else if (script == "uname -m") ok(uname)
       else if (script.startsWith("command -v ")) {
-        val tool = script.stripPrefix("command -v ").trim
+        val tool = script
+          .stripPrefix("command -v ")
+          .trim
           .takeWhile(c => c != ' ' && c != '>')
           .trim
           .stripPrefix("'")
