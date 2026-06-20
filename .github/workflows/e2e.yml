@@ -184,7 +184,11 @@ jobs:
   # --- macOS: Apptainer runs inside a Lima VM via `limactl shell` --------------
   macos:
     name: e2e macos/Lima (${{ matrix.mode }})
-    runs-on: macos-latest
+    # Intel runner on purpose: hosted Apple-Silicon macOS runners are themselves VMs
+    # without nested virtualization, so Lima cannot boot a guest there (vz fatal-exits;
+    # qemu aborts with "signal: abort trap"). Intel runners expose HVF, so Lima/QEMU
+    # works. Same LimaBackend code path, just an x86_64 guest.
+    runs-on: macos-13
     strategy:
       fail-fast: false
       matrix:
@@ -208,11 +212,8 @@ jobs:
         run: |
           brew install lima qemu
           # Backend.detect() / LimaBackend default to the instance named "default"
-          # (SCALAPPTAINER_LIMA_INSTANCE). Boot an Ubuntu LTS guest.
-          #
-          # Use the QEMU driver: hosted macOS runners do not permit the default
-          # Virtualization.framework ("vz") backend — it fatal-exits at boot.
-          limactl start --name=default --vm-type=qemu --tty=false template://ubuntu-lts
+          # (SCALAPPTAINER_LIMA_INSTANCE). Boot an Ubuntu LTS guest under QEMU (HVF).
+          limactl start --name=default --vm-type=qemu --tty=false template:ubuntu-lts
           limactl shell default uname -a
 
       - name: Install system Apptainer inside the Lima VM
