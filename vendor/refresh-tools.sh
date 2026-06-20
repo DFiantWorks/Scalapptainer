@@ -4,13 +4,16 @@
 # vendors so Apptainer's unprivileged installer can run inside a backend without
 # root. Output goes under scalapptainer/resources/scalapptainer/tools/linux-<arch>/.
 #
-#   curl   — fully-static musl build from github.com/stunnel/static-curl.
-#            Used by Apptainer's install-unprivileged.sh to fetch RPMs.
-#   cpio   — the static busybox from Alpine's busybox-static package; busybox runs
-#            its cpio applet when invoked as `cpio` (argv[0]). Debian/Ubuntu/WSL
-#            minimal images frequently lack cpio.
+#   curl    — fully-static musl build from github.com/stunnel/static-curl.
+#             Used by Apptainer's install-unprivileged.sh to fetch RPMs.
+#   busybox — the static busybox from Alpine's busybox-static package. It is a
+#             multi-call binary that dispatches on argv[0], so Scalapptainer
+#             symlinks the applets it needs to it at install time: `cpio` (which
+#             Debian/Ubuntu/WSL minimal images frequently lack) plus the RPM
+#             payload decompressors `xz`/`gzip`/`bzip2` that the vendored rpm2cpio
+#             shells out to. (busybox has no zstd applet.)
 #   rpm2cpio — NOT downloaded: it is a committed POSIX script (rpm2cpio is never
-#            shipped by Debian/Ubuntu). Edit the committed file to change it.
+#             shipped by Debian/Ubuntu). Edit the committed file to change it.
 #
 # Every artifact is pinned and verified against the recorded SHA256 below. Run from
 # anywhere; re-run to bump versions (update the pins + sums). Commit the binaries.
@@ -31,10 +34,10 @@ BUSYBOX_APK="busybox-static-1.36.1-r31.apk"
 url_for() {
   local arch="$1" tool="$2"
   case "$tool:$arch" in
-    curl:x86_64)  echo "https://github.com/stunnel/static-curl/releases/download/${CURL_VER}/curl-linux-x86_64-musl-${CURL_VER}.tar.xz" ;;
-    curl:aarch64) echo "https://github.com/stunnel/static-curl/releases/download/${CURL_VER}/curl-linux-aarch64-musl-${CURL_VER}.tar.xz" ;;
-    cpio:x86_64)  echo "https://dl-cdn.alpinelinux.org/alpine/${ALPINE_REL}/main/x86_64/${BUSYBOX_APK}" ;;
-    cpio:aarch64) echo "https://dl-cdn.alpinelinux.org/alpine/${ALPINE_REL}/main/aarch64/${BUSYBOX_APK}" ;;
+    curl:x86_64)     echo "https://github.com/stunnel/static-curl/releases/download/${CURL_VER}/curl-linux-x86_64-musl-${CURL_VER}.tar.xz" ;;
+    curl:aarch64)    echo "https://github.com/stunnel/static-curl/releases/download/${CURL_VER}/curl-linux-aarch64-musl-${CURL_VER}.tar.xz" ;;
+    busybox:x86_64)  echo "https://dl-cdn.alpinelinux.org/alpine/${ALPINE_REL}/main/x86_64/${BUSYBOX_APK}" ;;
+    busybox:aarch64) echo "https://dl-cdn.alpinelinux.org/alpine/${ALPINE_REL}/main/aarch64/${BUSYBOX_APK}" ;;
     *) return 1 ;;
   esac
 }
@@ -44,10 +47,10 @@ url_for() {
 # function (not an associative array) keeps this working on macOS's bash 3.2.
 sha_for() {
   case "$2:$1" in   # tool:arch
-    curl:x86_64)  echo "58c6fab6e3f62d39d23224d752de1302cb717d997288d0f23d6fa7e79c393c1f" ;;
-    curl:aarch64) echo "32799692a41e88f9f2be85348c2230baf5a0a29ded2d6c086e49e5cbab22b3f4" ;;
-    cpio:x86_64)  echo "6d4ae568988ee24beb9dac4afdac4df67f90bbaed6ca47628da35ff5eb632a4c" ;;
-    cpio:aarch64) echo "ebd2865edcab0b590c7d0edb70d3e782cbfb541e518a390ced3a3e186509bc7f" ;;
+    curl:x86_64)     echo "58c6fab6e3f62d39d23224d752de1302cb717d997288d0f23d6fa7e79c393c1f" ;;
+    curl:aarch64)    echo "32799692a41e88f9f2be85348c2230baf5a0a29ded2d6c086e49e5cbab22b3f4" ;;
+    busybox:x86_64)  echo "6d4ae568988ee24beb9dac4afdac4df67f90bbaed6ca47628da35ff5eb632a4c" ;;
+    busybox:aarch64) echo "ebd2865edcab0b590c7d0edb70d3e782cbfb541e518a390ced3a3e186509bc7f" ;;
     *) echo "" ;;
   esac
 }
@@ -58,7 +61,7 @@ sha256_of() {
   else shasum -a 256 "$1" | awk '{print $1}'; fi
 }
 
-tools=(curl cpio)
+tools=(curl busybox)
 arches=("$@"); [ ${#arches[@]} -eq 0 ] && arches=(x86_64 aarch64)
 
 fetch() {
@@ -71,9 +74,9 @@ fetch() {
   curl -fsSL "$url" -o "$tmp/dl"
 
   case "$tool" in
-    curl)  tar -C "$tmp" -xf "$tmp/dl"; cp "$tmp/curl" "$dest" ;;       # tar.xz with a `curl` binary
-    cpio)  tar -C "$tmp" -xzf "$tmp/dl" 2>/dev/null || true             # .apk is a gzip tar
-           cp "$(find "$tmp" -name busybox.static | head -1)" "$dest" ;;
+    curl)    tar -C "$tmp" -xf "$tmp/dl"; cp "$tmp/curl" "$dest" ;;     # tar.xz with a `curl` binary
+    busybox) tar -C "$tmp" -xzf "$tmp/dl" 2>/dev/null || true          # .apk is a gzip tar
+             cp "$(find "$tmp" -name busybox.static | head -1)" "$dest" ;;
   esac
   chmod +x "$dest"
   rm -rf "$tmp"

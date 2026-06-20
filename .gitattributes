@@ -14,4 +14,4 @@ scalapptainer/resources/scalapptainer/tools/**/rpm2cpio text eol=lf
 
 # Vendored static binaries (when present locally) are binary, not text.
 scalapptainer/resources/scalapptainer/tools/**/curl binary
-scalapptainer/resources/scalapptainer/tools/**/cpio binary
+scalapptainer/resources/scalapptainer/tools/**/busybox binary

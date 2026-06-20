@@ -42,7 +42,7 @@ object RecordingRunner {
     *   whether a Scalapptainer-managed apptainer already exists
     */
   def linuxEnv(
-      present: Set[String] = Set("bash", "curl", "rpm2cpio", "cpio", "base64"),
+      present: Set[String] = Set("bash", "curl", "rpm2cpio", "cpio", "xz", "gzip", "bzip2", "base64"),
       home: String = "/home/me",
       uname: String = "x86_64",
       hasApptainer: Boolean = false,
@@ -73,7 +73,9 @@ object RecordingRunner {
         if (script.contains("/bin/apptainer") && hasApptainer) ok() else fail()
       } else if (script.startsWith("test -f")) {
         if (imageExists) ok() else fail() // image cache existence probe (ApptainerImage.exists)
-      } else ok() // mkdir, base64 writes, the installer pipeline, etc.
+      } else if (script.startsWith("test -e")) {
+        fail() // vendored-tool symlink targets do not exist yet, so they get created
+      } else ok() // mkdir, base64 writes, ln -s, the installer pipeline, etc.
     }
   }
 }

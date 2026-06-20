@@ -21,7 +21,7 @@ object VendoredToolsTests extends TestSuite {
     test("vendored tool binaries are actually bundled for both arches") {
       for {
         arch <- Seq("x86_64", "aarch64")
-        tool <- Seq("rpm2cpio", "curl", "cpio")
+        tool <- Seq("rpm2cpio", "curl", "busybox")
       } {
         val path = s"/scalapptainer/tools/linux-$arch/$tool"
         val in = getClass.getResourceAsStream(path)
@@ -46,14 +46,36 @@ object VendoredToolsTests extends TestSuite {
     }
 
     test("ensure() materialises only the missing tools via base64 pipe") {
-      // Only base64 is present; curl/rpm2cpio/cpio are missing and must be vendored.
+      // Only base64 is present; curl/rpm2cpio plus busybox (backing cpio + decompressors) must be vendored.
       val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "base64"), home = "/home/me"))
       val result = VendoredTools.ensure(new LinuxBackend(r))
       assert(result.contains("/home/me/.scalapptainer/tools/bin"))
 
+      // Three real binaries are written byte-for-byte: curl, rpm2cpio and the single busybox.
       val base64Calls = r.calls.filter(c => r.scriptOf(c).exists(_.contains("base64 -d")))
-      assert(base64Calls.length == 3) // curl, rpm2cpio, cpio
+      assert(base64Calls.length == 3) // curl, rpm2cpio, busybox
       assert(base64Calls.forall(_.stdin.isDefined)) // payload fed via stdin
+
+      // cpio and the RPM-payload decompressors are symlinked to that one busybox, not re-materialised.
+      val bin = "/home/me/.scalapptainer/tools/bin"
+      for (applet <- Seq("cpio", "xz", "gzip", "bzip2"))
+        assert(r.scripts.exists(_.contains(s"ln -s 'busybox' '$bin/$applet'")))
+    }
+
+    test("ensure() backs cpio and the xz decompressor with the same vendored busybox") {
+      // The vendored rpm2cpio shells out to `xz -dc` for Apptainer's xz-compressed EL RPMs, so a bare container
+      // (e.g. Scastie's) that has cpio but no xz still gets xz from busybox.
+      val r = new RecordingRunner(
+        RecordingRunner.linuxEnv(present = Set("bash", "curl", "rpm2cpio", "gzip", "bzip2", "base64"), home = "/home/me")
+      )
+      val result = VendoredTools.ensure(new LinuxBackend(r))
+      assert(result.contains("/home/me/.scalapptainer/tools/bin"))
+      val bin = "/home/me/.scalapptainer/tools/bin"
+      // busybox is materialised, and both the missing cpio and xz point at it; gzip/bzip2 (present) are not shimmed.
+      assert(r.scripts.exists(_.contains(s"base64 -d > '$bin/busybox'")))
+      assert(r.scripts.exists(_.contains(s"ln -s 'busybox' '$bin/cpio'")))
+      assert(r.scripts.exists(_.contains(s"ln -s 'busybox' '$bin/xz'")))
+      assert(!r.scripts.exists(_.contains(s"ln -s 'busybox' '$bin/gzip'")))
     }
   }
 }

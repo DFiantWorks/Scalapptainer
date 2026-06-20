@@ -346,6 +346,14 @@ object ApptainerTests extends TestSuite {
       assert(installScript.contains("apptainer/main/tools/install-unprivileged.sh"))
       assert(installScript.contains("export PATH='/home/me/.scalapptainer/tools/bin'"))
 
+      // a stale install dir is cleared (rm -rf) and recreated before the installer runs, so a partial install
+      // left by an interrupted earlier run on a reused container (e.g. Scastie) self-heals — the installer
+      // otherwise aborts with "<dir>/<arch> is not empty" and has no force flag.
+      val rmIdx = installScript.indexOf(s"rm -rf '/home/me/.scalapptainer/$version'")
+      val mkdirIdx = installScript.indexOf(s"mkdir -p '/home/me/.scalapptainer/$version'")
+      val curlIdx = installScript.indexOf("install-unprivileged.sh")
+      assert(rmIdx >= 0 && mkdirIdx > rmIdx && curlIdx > mkdirIdx)
+
       // and apptainer is then invoked from the per-version managed install location
       assert(
         r.calls.last.argv ==
