@@ -13,16 +13,11 @@ name: E2E (real Apptainer)
 #                      user-mode install (and we assert the managed binary appeared).
 #
 # These spin up real backends (WSL2 on Windows, a Lima VM on macOS) which are slow,
-# so they are meant to run nightly / on demand rather than on every push. The fast
-# unit tests in ci.yml still gate every PR.
+# so they run on demand only (manual dispatch), not on push/PR. The fast unit tests
+# in ci.yml still gate every PR.
 
 on:
   workflow_dispatch:
-  # TEMPORARY: also run on PRs while we iterate these jobs to green. Once stable,
-  # drop `pull_request` and rely on the nightly schedule + manual dispatch below.
-  pull_request:
-  schedule:
-    - cron: '0 3 * * *' # nightly at 03:00 UTC
 
 permissions:
   contents: read
