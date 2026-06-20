@@ -7,7 +7,7 @@ import scalapptainer.*
   * `Apptainer` auto-detects the backend (native Linux, WSL2, or macOS/Lima) and installs Apptainer in user mode on
   * first use — no root, no manual setup.
   *
-  * Run with: ./mill examples.run
+  * Run with: ./mill examples.runMain demo.HelloDemo
   */
 object HelloDemo:
 

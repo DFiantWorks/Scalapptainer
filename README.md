@@ -2,8 +2,9 @@
 
 A cross-platform Scala 3 wrapper around [Apptainer](https://apptainer.org). Add it to
 your build and drive Apptainer containers from Scala on **Linux, Windows and macOS**.
-Scalapptainer routes every command through the right place for your OS and installs
-Apptainer for you, in **user mode** (no root), on first use.
+Scalapptainer routes every command through the right place for your OS and, on first use,
+reuses an existing system Apptainer if one is on the backend's `PATH` — otherwise it installs
+Apptainer for you, in **user mode** (no root).
 
 ## What is Apptainer, and why this library?
 
@@ -19,8 +20,10 @@ shell scripts and a package manager. **Scalapptainer removes all of that:**
 - **One dependency, three OSes.** The same Scala code runs on Linux, Windows (via WSL2)
   and macOS (via a Lima VM). Scalapptainer detects the host and routes commands to the
   right backend.
-- **No root, no manual install.** On first use it installs Apptainer for you in user mode,
-  and bundles the small helper tools the installer needs so even a minimal distro works.
+- **No root, no manual install.** If Apptainer is already on the backend's `PATH` (e.g. a
+  system or setuid-root install) Scalapptainer uses it as-is; otherwise, on first use, it
+  installs Apptainer for you in user mode, bundling the small helper tools the installer
+  needs so even a minimal distro works.
 - **A typed, fluent API.** `pull`/`build` return an immutable image handle you configure
   with [bind mounts](https://apptainer.org/docs/user/main/bind_paths_and_mounts.html),
   [env vars](https://apptainer.org/docs/user/main/environment_and_metadata.html) and X11
@@ -121,9 +124,14 @@ require the Linux *environment* to already exist on non-Linux hosts (a one-time 
 
 | Host | You provide | Scalapptainer provides |
 |------|-------------|------------------------|
-| Linux | a POSIX shell | Apptainer (user-mode install) |
+| Linux | a POSIX shell | Apptainer (system install if present, else a user-mode install) |
 | Windows | **WSL2** enabled (`wsl --install`, one-time, needs admin) | Apptainer inside WSL2 |
 | macOS | **Lima** installed and an instance running (`brew install lima && limactl start`) | Apptainer inside the VM |
+
+On each backend, Scalapptainer first looks for an `apptainer` already on the `PATH` and
+uses it if found; only when none exists does it perform its own user-mode install (into
+`~/.scalapptainer/<version>`). So a pre-installed system Apptainer is always preferred, and
+you can override the bundled version simply by having your own on the `PATH`.
 
 If the required backend is missing, Scalapptainer throws a `BackendUnavailableException`
 with the exact commands to fix it.
@@ -261,11 +269,11 @@ repo root:
 
 | Demo | What it shows | Run |
 |------|---------------|-----|
-| `demo.HelloDemo` | pull a tiny image and run commands in it | `./mill examples.run` |
+| `demo.HelloDemo` | pull a tiny image and run commands in it | `./mill examples.runMain demo.HelloDemo` |
 | `demo.BuildDemo` | build a minimal image from an inline def (unprivileged), then bind-mount a generated file back out to the host | `./mill examples.runMain demo.BuildDemo` |
 | `demo.GuiDemo` | run a GUI app (`xclock`) with the host display forwarded in via `.withX11()` | `./mill examples.runMain demo.GuiDemo` |
 
-`./mill examples.run` runs the default (`HelloDemo`). The first run of each builds or pulls
+`./mill examples.run` also runs the default (`HelloDemo`). The first run of each builds or pulls
 its image (cached afterwards). `GuiDemo` needs a display (WSLg on Windows, a running X
 server on Linux, or XQuartz on macOS) and opens a clock window you close to finish. The
 demo sources under [examples/src/demo/](examples/src/demo/) are short and commented as a
