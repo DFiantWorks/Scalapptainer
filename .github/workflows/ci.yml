@@ -37,10 +37,10 @@ jobs:
               ~/.cache/mill
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -48,7 +48,7 @@ jobs:
       # Cache the Mill launcher (~/.cache/mill on every OS) and the Coursier
       # dependency cache (OS-specific default location).
       - name: Cache Mill launcher & JVM dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ matrix.cache_path }}
           key: ${{ runner.os }}-mill-${{ hashFiles('build.mill', '.mill-version') }}
@@ -60,7 +60,7 @@ jobs:
       # re-download on a cache miss. rpm2cpio is committed and needs no download.
       - name: Cache vendored installer tools
         id: tools-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             scalapptainer/resources/scalapptainer/tools/linux-x86_64/curl

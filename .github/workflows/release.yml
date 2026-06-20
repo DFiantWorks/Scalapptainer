@@ -25,7 +25,7 @@ jobs:
     name: publish to Maven Central
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # VcsVersionModule derives publishVersion from the tag history, so the full
           # history and all tags are required — a shallow checkout would version the
@@ -34,7 +34,7 @@ jobs:
           fetch-tags: true
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
