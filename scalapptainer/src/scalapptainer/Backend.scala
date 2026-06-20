@@ -71,6 +71,22 @@ abstract class Backend(val runner: CommandRunner) {
   /** The backend CPU architecture (resolved once via `uname -m`). */
   lazy val arch: Arch = Arch.parse(runShell("uname -m").throwIfFailed().out)
 
+  /** Whether this backend forbids creating an unprivileged user namespace (resolved once).
+    *
+    * Apptainer's rootless engine needs one; some sandboxed containers (restrictive seccomp/AppArmor) deny the
+    * `unshare(CLONE_NEWUSER)` syscall even when the kernel sysctls (`max_user_namespaces`, `unprivileged_userns_clone`)
+    * permit it. Detected by actually attempting to create one: an explicit permission denial counts as blocked, while a
+    * missing `unshare` (we can't tell) does not — so we never false-positive on a backend that simply lacks the probe.
+    */
+  lazy val unprivilegedUsernsBlocked: Boolean = {
+    val r = runShell("unshare -U true")
+    if (r.succeeded) false
+    else {
+      val msg = s"${r.out}\n${r.err}".toLowerCase
+      msg.contains("operation not permitted") || msg.contains("permission denied")
+    }
+  }
+
   /** Scalapptainer's per-user cache directory inside the backend. */
   def cacheDir: String = s"$home/.scalapptainer"
 

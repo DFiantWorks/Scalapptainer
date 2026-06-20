@@ -55,6 +55,13 @@ final class ApptainerInstaller(
     backend.runShell(s"test -x ${ShellQuote.single(path)}").succeeded
 
   private def install(): Unit = {
+    // We only reach install() when no system Apptainer and no prior managed install were found, so this is the
+    // unprivileged user-mode install — which is pointless if the backend can't create user namespaces (Apptainer's
+    // rootless engine needs them to run anything). Fail fast and clearly here, before fetching tens of MB of RPMs.
+    // A setuid-root or already-installed Apptainer never reaches this point, so it is never subjected to the check.
+    if (!sys.env.contains("SCALAPPTAINER_SKIP_USERNS_CHECK") && backend.unprivilegedUsernsBlocked)
+      throw new UserNamespaceException(backend.name)
+
     val pathPrefix = VendoredTools.ensure(backend)
     val exportPath =
       pathPrefix.map(d => s"export PATH=${ShellQuote.single(d)}:\"$$PATH\"\n").getOrElse("")

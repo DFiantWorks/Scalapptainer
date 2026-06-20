@@ -128,6 +128,17 @@ require the Linux *environment* to already exist on non-Linux hosts (a one-time 
 If the required backend is missing, Scalapptainer throws a `BackendUnavailableException`
 with the exact commands to fix it.
 
+> **Unprivileged user namespaces are required.** Apptainer's rootless engine runs every
+> container inside an unprivileged user namespace, so the backend must permit creating one.
+> Most Linux hosts, WSL2 and Lima VMs do; **heavily sandboxed containers do not** — many CI
+> runners and online code playgrounds (e.g. **[Scastie](https://scastie.scala-lang.org)**)
+> run under a seccomp/AppArmor policy that blocks the `unshare(CLONE_NEWUSER)` syscall even
+> when the kernel itself allows it. **Apptainer cannot run in such an environment**, and there
+> is no unprivileged workaround. When Scalapptainer would do its user-mode install on such a
+> host it fails fast with a `UserNamespaceException` instead of hanging on a doomed install.
+> (Set `SCALAPPTAINER_SKIP_USERNS_CHECK=1` only if you are pointing it at a setuid-root
+> Apptainer that does not need user namespaces.)
+
 > **You do not need to install `cpio`, `curl`, `rpm2cpio` or any other helper tools.**
 > The unprivileged Apptainer installer needs them, but Scalapptainer takes care of its own
 > install dependencies automatically: it **bundles static binaries** and materialises them

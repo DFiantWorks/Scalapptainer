@@ -21,3 +21,23 @@ final class ApptainerCommandException(val result: ProcResult)
   */
 final class InstallationException(message: String, cause: Throwable = null)
     extends ScalapptainerException(message, cause)
+
+/** Thrown when Scalapptainer would install Apptainer in user mode but the backend forbids creating unprivileged user
+  * namespaces — which Apptainer's rootless engine needs to run containers. The kernel may permit them while the
+  * container sandbox (seccomp/AppArmor) still denies the `unshare(CLONE_NEWUSER)` syscall, as on locked-down CI runners
+  * and online playgrounds (e.g. Scastie). Checked only at install time; a setuid-root or already-installed Apptainer is
+  * not re-checked.
+  */
+final class UserNamespaceException(backendName: String)
+    extends ScalapptainerException(
+      s"""This $backendName environment forbids creating unprivileged user namespaces, which Apptainer's rootless
+         |engine needs to run containers. The kernel may allow them while the container sandbox (seccomp/AppArmor)
+         |still blocks the unshare(CLONE_NEWUSER) syscall — common in restricted CI runners and online code
+         |playgrounds such as Scastie.
+         |
+         |There is no unprivileged workaround: Apptainer needs either a setuid-root install (requires root) or the
+         |ability to create a user namespace. Run on a host, VM or CI that permits unprivileged user namespaces.
+         |
+         |If you are pointing Scalapptainer at a setuid-root Apptainer that does not need user namespaces, set
+         |SCALAPPTAINER_SKIP_USERNS_CHECK=1 to skip this check.""".stripMargin
+    )

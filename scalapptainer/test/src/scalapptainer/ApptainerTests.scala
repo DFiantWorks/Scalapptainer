@@ -360,5 +360,39 @@ object ApptainerTests extends TestSuite {
           Seq(s"/home/me/.scalapptainer/$version/bin/apptainer", "--version")
       )
     }
+
+    test("the user-mode install is refused with a clear error when the backend forbids user namespaces") {
+      // No system apptainer and no prior managed install -> we'd do the unprivileged install, which is pointless
+      // where unshare(CLONE_NEWUSER) is denied (e.g. a locked-down CI/playground container).
+      val r = new RecordingRunner(
+        RecordingRunner.linuxEnv(present = Set("bash", "base64"), home = "/home/me", usernsBlocked = true)
+      )
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val ex = assertThrows[UserNamespaceException](app.run("img.sif"))
+      assert(ex.getMessage.contains("user namespaces"))
+      // it failed fast: the installer was never fetched/run
+      assert(!r.scripts.exists(_.contains("install-unprivileged.sh")))
+    }
+
+    test("an already-installed managed apptainer is reused without re-probing user namespaces") {
+      // hasApptainer=true => the managed binary already exists on disk; resolve() returns it and install() — the only
+      // place the userns check lives — is never reached, so a blocked sandbox does not matter here.
+      val r = new RecordingRunner(
+        RecordingRunner.linuxEnv(present = Set("bash", "base64"), home = "/home/me", hasApptainer = true, usernsBlocked = true)
+      )
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.run("img.sif") // does not throw
+      assert(!r.scripts.exists(_.startsWith("unshare"))) // the probe never ran
+      val version = ApptainerInstaller.DefaultApptainerVersion
+      assert(r.calls.last.argv == Seq(s"/home/me/.scalapptainer/$version/bin/apptainer", "run", "img.sif"))
+    }
+
+    test("a system apptainer (possibly setuid) is used without a user-namespace check") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), usernsBlocked = true))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.run("img.sif") // does not throw
+      assert(!r.scripts.exists(_.startsWith("unshare")))
+      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "run", "img.sif"))
+    }
   }
 }

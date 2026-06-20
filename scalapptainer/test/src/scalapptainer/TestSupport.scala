@@ -48,7 +48,8 @@ object RecordingRunner {
       uname: String = "x86_64",
       hasApptainer: Boolean = false,
       imageExists: Boolean = false,
-      display: String = ""
+      display: String = "",
+      usernsBlocked: Boolean = false
   ): ProcSpec => ProcResult = { spec =>
     def ok(out: String = ""): ProcResult = ProcResult(0, out, "", spec.argv)
     def fail(): ProcResult = ProcResult(1, "", "", spec.argv)
@@ -58,6 +59,11 @@ object RecordingRunner {
     else {
       val script = spec.argv(i + 1).trim
       if (script == "true") ok()
+      else if (script.startsWith("unshare")) {
+        // user-namespace probe: success = usable; an explicit denial = blocked sandbox
+        if (usernsBlocked) ProcResult(1, "", "unshare: unshare(0x10000000): Operation not permitted", spec.argv)
+        else ok()
+      }
       else if (script.contains("""printf %s "$HOME"""")) ok(home)
       else if (script.contains("""printf %s "$DISPLAY"""")) ok(display)
       else if (script == "uname -m") ok(uname)
