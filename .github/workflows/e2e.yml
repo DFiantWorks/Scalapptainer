@@ -73,44 +73,23 @@ jobs:
           # Scalapptainer's rootless install needs them. Relax it (best-effort).
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
+      # `mill runMain` occasionally reports "Subprocess failed" even though the demo ran
+      # to completion (the program succeeds every time; only mill's subprocess reaping is
+      # flaky — its long-lived server is a process subreaper and races with the helper
+      # processes apptainer forks). Retry up to 3×; the pull/install is cached after the
+      # first attempt, so retries are fast and the real work isn't repeated.
       - name: Run HelloDemo (real pull + run)
-        if: matrix.mode == 'system'
-        run: ./mill examples.runMain demo.HelloDemo
-
-      # DIAGNOSTIC (temporary): in scalapptainer mode the demo JVM exited non-zero on
-      # one earlier run despite printing correct output (and exec uses check=false, so it
-      # cannot fail from an apptainer exit code) — i.e. a signal or a cold-install flake.
-      # Characterize it: run the cold-cache demo many times via BOTH mill and direct java
-      # (to separate harness from app), and on any failure dump the demo output, the true
-      # exit code, dmesg (OOM/segv/apparmor/userns), and a direct apptainer exec.
-      - name: Run HelloDemo cold-cache repeatedly (scalapptainer)
-        if: matrix.mode == 'scalapptainer'
         run: |
-          CP=$(./mill show examples.runClasspath | jq -r 'join(":")')
-          millfail=0; javafail=0
-          for i in $(seq 1 10); do
-            rm -rf "$HOME/.scalapptainer"
-            rc=0
-            if [ $((i % 2)) -eq 1 ]; then
-              method=mill; ./mill examples.runMain demo.HelloDemo >"/tmp/run.$i.log" 2>&1 || rc=$?
-            else
-              method=java; java -cp "$CP" demo.HelloDemo >"/tmp/run.$i.log" 2>&1 || rc=$?
+          for attempt in 1 2 3; do
+            echo "::group::HelloDemo attempt $attempt"
+            if ./mill examples.runMain demo.HelloDemo; then
+              echo "::endgroup::"; exit 0
             fi
-            echo "===== iter $i ($method): rc=$rc ====="
-            if [ "$rc" -ne 0 ]; then
-              if [ "$method" = mill ]; then millfail=$((millfail+1)); else javafail=$((javafail+1)); fi
-              echo "--- demo output (tail) ---"; tail -60 "/tmp/run.$i.log" || true
-              echo "--- dmesg (tail) ---"; sudo dmesg | tail -80 || true
-              APP=$(ls "$HOME"/.scalapptainer/*/bin/apptainer 2>/dev/null || true)
-              echo "managed apptainer: ${APP:-<none>}"
-              if [ -n "$APP" ]; then
-                "$APP" --version || echo "version rc=$?"
-                "$APP" exec "$HOME/.scalapptainer/images/alpine.sif" echo direct-after-fail || echo "direct exec rc=$?"
-              fi
-            fi
+            echo "::endgroup::"
+            echo "attempt $attempt failed (mill subprocess flake); retrying" >&2
           done
-          echo "TOTAL failures — mill=$millfail/5 java=$javafail/5"
-          [ $((millfail + javafail)) -eq 0 ]
+          echo "HelloDemo failed after 3 attempts" >&2
+          exit 1
 
       - name: Assert Scalapptainer did NOT self-install (system reused)
         if: matrix.mode == 'system'
@@ -174,9 +153,18 @@ jobs:
             echo "apptainer unexpectedly already on the WSL PATH" >&2; exit 1
           fi
 
+      # Retry the mill run (see the linux job for why mill's subprocess reaping is flaky).
       - name: Run HelloDemo (real pull + run, via wsl.exe)
         shell: pwsh
-        run: ./mill.bat examples.runMain demo.HelloDemo
+        run: |
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "HelloDemo attempt $attempt"
+            ./mill.bat examples.runMain demo.HelloDemo
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "attempt $attempt failed (mill subprocess flake); retrying"
+          }
+          Write-Host "HelloDemo failed after 3 attempts"
+          exit 1
 
       - name: Assert Scalapptainer did NOT self-install (system reused)
         if: matrix.mode == 'system'
@@ -247,8 +235,19 @@ jobs:
           # Newer Ubuntu guests restrict unprivileged user namespaces via AppArmor.
           limactl shell default sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
+      # Retry the mill run (see the linux job for why mill's subprocess reaping is flaky).
       - name: Run HelloDemo (real pull + run, via limactl shell)
-        run: ./mill examples.runMain demo.HelloDemo
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::HelloDemo attempt $attempt"
+            if ./mill examples.runMain demo.HelloDemo; then
+              echo "::endgroup::"; exit 0
+            fi
+            echo "::endgroup::"
+            echo "attempt $attempt failed (mill subprocess flake); retrying" >&2
+          done
+          echo "HelloDemo failed after 3 attempts" >&2
+          exit 1
 
       - name: Assert Scalapptainer did NOT self-install (system reused)
         if: matrix.mode == 'system'
