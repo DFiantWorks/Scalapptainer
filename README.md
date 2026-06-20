@@ -54,7 +54,7 @@ network-dependent), then caches it under `~/.scalapptainer/images` so later runs
 
 ```scala
 //> using scala 3.3.8
-//> using dep io.github.dfiantworks::scalapptainer:0.2.0
+//> using dep io.github.dfiantworks::scalapptainer:0.2.1
 
 import scalapptainer.*
 
@@ -75,7 +75,7 @@ network-dependent) and caches it, so later runs start instantly.
 
 ```scala
 //> using scala 3.3.8
-//> using dep io.github.dfiantworks::scalapptainer:0.2.0
+//> using dep io.github.dfiantworks::scalapptainer:0.2.1
 
 import scalapptainer.*
 
@@ -102,19 +102,19 @@ macOS. Both scripts work unchanged on all three OSes.
 scala (single file or `project.scala`):
 
 ```scala
-//> using dep io.github.dfiantworks::scalapptainer:0.2.0
+//> using dep io.github.dfiantworks::scalapptainer:0.2.1
 ```
 
 mill:
 
 ```scala
-def mvnDeps = Seq(mvn"io.github.dfiantworks::scalapptainer:0.2.0")
+def mvnDeps = Seq(mvn"io.github.dfiantworks::scalapptainer:0.2.1")
 ```
 
 sbt:
 
 ```scala
-libraryDependencies += "io.github.dfiantworks" %% "scalapptainer" % "0.2.0"
+libraryDependencies += "io.github.dfiantworks" %% "scalapptainer" % "0.2.1"
 ```
 
 ## Prerequisites
