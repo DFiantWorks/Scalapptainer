@@ -28,10 +28,14 @@ object VendoredTools {
   private val ownTools: Seq[String] = Seq("curl", "rpm2cpio")
 
   /** Multi-call applets provided by the single vendored busybox binary: the installer's `cpio`, plus the decompressors
-    * the vendored [[rpm2cpio]] shells out to for xz/gzip/bzip2-compressed RPM payloads. Each is materialised as a
-    * symlink to the busybox binary, only when missing from the backend PATH.
+    * the vendored `rpm2cpio` shells out to for compressed RPM payloads. Each is materialised as a symlink to the
+    * busybox binary, only when missing from the backend PATH.
+    *
+    * The names match what this Alpine busybox actually exposes (and what `rpm2cpio` invokes): it provides `xzcat` and
+    * `unlzma` but **not** an `xz` applet, so the xz/lzma payloads are handled via those. busybox has no `zstd` applet,
+    * so a zstd-compressed RPM still needs a system `zstd`.
     */
-  private val busyboxApplets: Seq[String] = Seq("cpio", "xz", "gzip", "bzip2")
+  private val busyboxApplets: Seq[String] = Seq("cpio", "gzip", "bzip2", "xzcat", "unlzma")
 
   /** Every tool this object can provide. */
   val requiredTools: Seq[String] = ownTools ++ busyboxApplets

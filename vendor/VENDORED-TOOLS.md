@@ -19,11 +19,12 @@ Notes:
 
 - `busybox` is a static multi-call binary; it dispatches to an applet based on `argv[0]`,
   so Scalapptainer symlinks the applets it needs to it at install time: `cpio` (which
-  minimal Debian/Ubuntu/WSL images frequently lack) and the RPM-payload decompressors
-  `xz`/`gzip`/`bzip2` that the vendored `rpm2cpio` shells out to. (busybox has no zstd
-  applet, so a zstd-compressed RPM still needs a system `zstd`.) busybox is licensed
-  **GPL-2.0-only** — its corresponding source is available from <https://www.busybox.net/>
-  and the Alpine package repository linked above.
+  minimal Debian/Ubuntu/WSL images frequently lack) and the RPM-payload decompressors the
+  vendored `rpm2cpio` shells out to — `gzip`, `bzip2`, `xzcat` (this busybox has no `xz`
+  applet, only `xzcat`/`unxz`) and `unlzma`. (busybox has no `zstd` applet, so a
+  zstd-compressed RPM still needs a system `zstd`.) busybox is licensed **GPL-2.0-only** —
+  its corresponding source is available from <https://www.busybox.net/> and the Alpine
+  package repository linked above.
 - `curl` static builds are released by the stunnel project under curl's MIT-style license.
 - `rpm2cpio` is a small POSIX shell script maintained in this repository (Debian/Ubuntu
   never ship `rpm2cpio`, so there is no upstream binary to vendor).

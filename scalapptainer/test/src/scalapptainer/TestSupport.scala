@@ -42,7 +42,8 @@ object RecordingRunner {
     *   whether a Scalapptainer-managed apptainer already exists
     */
   def linuxEnv(
-      present: Set[String] = Set("bash", "curl", "rpm2cpio", "cpio", "xz", "gzip", "bzip2", "base64"),
+      present: Set[String] =
+        Set("bash", "curl", "rpm2cpio", "cpio", "gzip", "bzip2", "xzcat", "unlzma", "base64"),
       home: String = "/home/me",
       uname: String = "x86_64",
       hasApptainer: Boolean = false,

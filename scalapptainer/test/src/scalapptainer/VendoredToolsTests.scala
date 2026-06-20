@@ -58,23 +58,23 @@ object VendoredToolsTests extends TestSuite {
 
       // cpio and the RPM-payload decompressors are symlinked to that one busybox, not re-materialised.
       val bin = "/home/me/.scalapptainer/tools/bin"
-      for (applet <- Seq("cpio", "xz", "gzip", "bzip2"))
+      for (applet <- Seq("cpio", "gzip", "bzip2", "xzcat", "unlzma"))
         assert(r.scripts.exists(_.contains(s"ln -s 'busybox' '$bin/$applet'")))
     }
 
     test("ensure() backs cpio and the xz decompressor with the same vendored busybox") {
-      // The vendored rpm2cpio shells out to `xz -dc` for Apptainer's xz-compressed EL RPMs, so a bare container
-      // (e.g. Scastie's) that has cpio but no xz still gets xz from busybox.
+      // The vendored rpm2cpio shells out to `xzcat` for Apptainer's xz-compressed EL RPMs (this busybox has no `xz`
+      // applet, only `xzcat`), so a bare container (e.g. Scastie's) that has cpio/gzip but no xz still gets it.
       val r = new RecordingRunner(
         RecordingRunner.linuxEnv(present = Set("bash", "curl", "rpm2cpio", "gzip", "bzip2", "base64"), home = "/home/me")
       )
       val result = VendoredTools.ensure(new LinuxBackend(r))
       assert(result.contains("/home/me/.scalapptainer/tools/bin"))
       val bin = "/home/me/.scalapptainer/tools/bin"
-      // busybox is materialised, and both the missing cpio and xz point at it; gzip/bzip2 (present) are not shimmed.
+      // busybox is materialised, and the missing cpio + xzcat point at it; gzip/bzip2 (present) are not shimmed.
       assert(r.scripts.exists(_.contains(s"base64 -d > '$bin/busybox'")))
       assert(r.scripts.exists(_.contains(s"ln -s 'busybox' '$bin/cpio'")))
-      assert(r.scripts.exists(_.contains(s"ln -s 'busybox' '$bin/xz'")))
+      assert(r.scripts.exists(_.contains(s"ln -s 'busybox' '$bin/xzcat'")))
       assert(!r.scripts.exists(_.contains(s"ln -s 'busybox' '$bin/gzip'")))
     }
   }

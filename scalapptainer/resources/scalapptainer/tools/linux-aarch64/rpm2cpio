@@ -3,8 +3,12 @@
 #
 # Extracts and decompresses the cpio payload from an RPM. Payload compression is
 # detected from magic bytes (so this does not depend on the `file` command).
-# Requires: od, dd, and the relevant decompressor (gzip/xz/zstd/bzip2) for the
-# RPM's payload. Debian/Ubuntu never ship rpm2cpio, which is why this is bundled.
+# Requires: od, dd, and the relevant decompressor for the RPM's payload. The
+# decompressor commands are chosen to exist in BOTH xz-utils and busybox
+# (`xzcat`/`unlzma`/`gzip`/`bzip2`), since Scalapptainer may back them with a
+# vendored busybox (which has no `xz` applet, only `xzcat`). zstd has no busybox
+# applet, so zstd payloads need a system `zstd`. Debian/Ubuntu never ship
+# rpm2cpio, which is why this is bundled.
 #
 # Usage: rpm2cpio PACKAGE.rpm   (or `-`/no arg to read the RPM from stdin)
 set -eu
@@ -43,9 +47,9 @@ extract="dd if=$pkg bs=$o skip=1"
 
 case "$magic" in
   1f8b*)        $extract 2>/dev/null | gzip -dc ;;
-  fd377a585a00) $extract 2>/dev/null | xz -dc ;;
+  fd377a585a00) $extract 2>/dev/null | xzcat ;;
   28b52ffd*)    $extract 2>/dev/null | zstd -dc ;;
   425a68*)      $extract 2>/dev/null | bzip2 -dc ;;
-  5d0000*)      $extract 2>/dev/null | xz -dc --format=lzma ;;
+  5d0000*)      $extract 2>/dev/null | unlzma -c ;;
   *)            $extract 2>/dev/null ;;   # assume an uncompressed cpio payload
 esac
