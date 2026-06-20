@@ -74,32 +74,43 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
       - name: Run HelloDemo (real pull + run)
-        run: |
-          rc=0
-          ./mill examples.runMain demo.HelloDemo || rc=$?
-          echo "=== mill runMain rc=$rc ==="
-          exit $rc
+        if: matrix.mode == 'system'
+        run: ./mill examples.runMain demo.HelloDemo
 
-      # DIAGNOSTIC (temporary): the mill subprocess exited non-zero in scalapptainer
-      # mode even though the demo printed correct output. Isolate the demo JVM's true
-      # exit code from mill, and exercise the self-installed apptainer directly with
-      # stderr visible.
-      - name: Diagnose self-installed apptainer (scalapptainer)
-        if: always() && matrix.mode == 'scalapptainer'
+      # DIAGNOSTIC (temporary): in scalapptainer mode the demo JVM exited non-zero on
+      # one earlier run despite printing correct output (and exec uses check=false, so it
+      # cannot fail from an apptainer exit code) — i.e. a signal or a cold-install flake.
+      # Characterize it: run the cold-cache demo many times via BOTH mill and direct java
+      # (to separate harness from app), and on any failure dump the demo output, the true
+      # exit code, dmesg (OOM/segv/apparmor/userns), and a direct apptainer exec.
+      - name: Run HelloDemo cold-cache repeatedly (scalapptainer)
+        if: matrix.mode == 'scalapptainer'
         run: |
-          set -x
-          APP=$(ls "$HOME"/.scalapptainer/*/bin/apptainer 2>/dev/null || true)
-          SIF="$HOME/.scalapptainer/images/alpine.sif"
-          echo "APP=$APP  SIF=$SIF"
-          if [ -n "$APP" ]; then
-            "$APP" --version; echo "version rc=$?"
-            "$APP" exec "$SIF" echo hello; echo "exec rc=$?"
-          fi
-          echo "--- run the demo main directly (java), bypassing mill ---"
           CP=$(./mill show examples.runClasspath | jq -r 'join(":")')
-          set +e
-          java -cp "$CP" demo.HelloDemo
-          echo "=== direct java demo rc=$? ==="
+          millfail=0; javafail=0
+          for i in $(seq 1 10); do
+            rm -rf "$HOME/.scalapptainer"
+            rc=0
+            if [ $((i % 2)) -eq 1 ]; then
+              method=mill; ./mill examples.runMain demo.HelloDemo >"/tmp/run.$i.log" 2>&1 || rc=$?
+            else
+              method=java; java -cp "$CP" demo.HelloDemo >"/tmp/run.$i.log" 2>&1 || rc=$?
+            fi
+            echo "===== iter $i ($method): rc=$rc ====="
+            if [ "$rc" -ne 0 ]; then
+              if [ "$method" = mill ]; then millfail=$((millfail+1)); else javafail=$((javafail+1)); fi
+              echo "--- demo output (tail) ---"; tail -60 "/tmp/run.$i.log" || true
+              echo "--- dmesg (tail) ---"; sudo dmesg | tail -80 || true
+              APP=$(ls "$HOME"/.scalapptainer/*/bin/apptainer 2>/dev/null || true)
+              echo "managed apptainer: ${APP:-<none>}"
+              if [ -n "$APP" ]; then
+                "$APP" --version || echo "version rc=$?"
+                "$APP" exec "$HOME/.scalapptainer/images/alpine.sif" echo direct-after-fail || echo "direct exec rc=$?"
+              fi
+            fi
+          done
+          echo "TOTAL failures — mill=$millfail/5 java=$javafail/5"
+          [ $((millfail + javafail)) -eq 0 ]
 
       - name: Assert Scalapptainer did NOT self-install (system reused)
         if: matrix.mode == 'system'
@@ -184,11 +195,12 @@ jobs:
   # --- macOS: Apptainer runs inside a Lima VM via `limactl shell` --------------
   macos:
     name: e2e macos/Lima (${{ matrix.mode }})
-    # Intel runner on purpose: hosted Apple-Silicon macOS runners are themselves VMs
-    # without nested virtualization, so Lima cannot boot a guest there (vz fatal-exits;
-    # qemu aborts with "signal: abort trap"). Intel runners expose HVF, so Lima/QEMU
-    # works. Same LimaBackend code path, just an x86_64 guest.
-    runs-on: macos-13
+    # Intel runner on purpose: hosted Apple-Silicon macOS runners (macos-14/15/26, i.e.
+    # macos-latest) are themselves VMs without nested virtualization, so Lima cannot boot
+    # a guest there (vz fatal-exits; qemu aborts with "signal: abort trap"). Intel runners
+    # expose HVF, so Lima/QEMU works. macos-26-intel is the current GA Intel runner (the
+    # old macos-13 image is being phased out). Same LimaBackend path, x86_64 guest.
+    runs-on: macos-26-intel
     strategy:
       fail-fast: false
       matrix:
