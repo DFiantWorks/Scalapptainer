@@ -74,7 +74,32 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
       - name: Run HelloDemo (real pull + run)
-        run: ./mill examples.runMain demo.HelloDemo
+        run: |
+          rc=0
+          ./mill examples.runMain demo.HelloDemo || rc=$?
+          echo "=== mill runMain rc=$rc ==="
+          exit $rc
+
+      # DIAGNOSTIC (temporary): the mill subprocess exited non-zero in scalapptainer
+      # mode even though the demo printed correct output. Isolate the demo JVM's true
+      # exit code from mill, and exercise the self-installed apptainer directly with
+      # stderr visible.
+      - name: Diagnose self-installed apptainer (scalapptainer)
+        if: always() && matrix.mode == 'scalapptainer'
+        run: |
+          set -x
+          APP=$(ls "$HOME"/.scalapptainer/*/bin/apptainer 2>/dev/null || true)
+          SIF="$HOME/.scalapptainer/images/alpine.sif"
+          echo "APP=$APP  SIF=$SIF"
+          if [ -n "$APP" ]; then
+            "$APP" --version; echo "version rc=$?"
+            "$APP" exec "$SIF" echo hello; echo "exec rc=$?"
+          fi
+          echo "--- run the demo main directly (java), bypassing mill ---"
+          CP=$(./mill show examples.runClasspath | jq -r 'join(":")')
+          set +e
+          java -cp "$CP" demo.HelloDemo
+          echo "=== direct java demo rc=$? ==="
 
       - name: Assert Scalapptainer did NOT self-install (system reused)
         if: matrix.mode == 'system'
@@ -181,10 +206,13 @@ jobs:
 
       - name: Install and start Lima (instance "default")
         run: |
-          brew install lima
+          brew install lima qemu
           # Backend.detect() / LimaBackend default to the instance named "default"
           # (SCALAPPTAINER_LIMA_INSTANCE). Boot an Ubuntu LTS guest.
-          limactl start --name=default --tty=false --timeout=10m template://ubuntu-lts
+          #
+          # Use the QEMU driver: hosted macOS runners do not permit the default
+          # Virtualization.framework ("vz") backend — it fatal-exits at boot.
+          limactl start --name=default --vm-type=qemu --tty=false template://ubuntu-lts
           limactl shell default uname -a
 
       - name: Install system Apptainer inside the Lima VM
