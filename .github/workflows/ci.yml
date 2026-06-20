@@ -55,7 +55,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-mill-
 
-      # curl/cpio static binaries are gitignored (fetched, not committed). Cache
+      # curl/busybox static binaries are gitignored (fetched, not committed). Cache
       # them keyed on the pin/checksum table in refresh-tools.sh, and only
       # re-download on a cache miss. rpm2cpio is committed and needs no download.
       - name: Cache vendored installer tools
@@ -64,12 +64,12 @@ jobs:
         with:
           path: |
             scalapptainer/resources/scalapptainer/tools/linux-x86_64/curl
-            scalapptainer/resources/scalapptainer/tools/linux-x86_64/cpio
+            scalapptainer/resources/scalapptainer/tools/linux-x86_64/busybox
             scalapptainer/resources/scalapptainer/tools/linux-aarch64/curl
-            scalapptainer/resources/scalapptainer/tools/linux-aarch64/cpio
+            scalapptainer/resources/scalapptainer/tools/linux-aarch64/busybox
           key: tools-${{ hashFiles('vendor/refresh-tools.sh') }}
 
-      - name: Vendor static installer tools (curl, cpio)
+      - name: Vendor static installer tools (curl, busybox)
         if: steps.tools-cache.outputs.cache-hit != 'true'
         shell: bash
         run: bash vendor/refresh-tools.sh

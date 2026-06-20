@@ -62,9 +62,14 @@ final class ApptainerInstaller(
     val q = ShellQuote.single(installDir)
     val u = ShellQuote.single(installerUrl)
     val v = ShellQuote.single(version)
+    // We only reach install() when no usable managed `apptainer` was found, so any pre-existing install dir is stale
+    // (e.g. a previous run interrupted mid-install, as can happen on a reused CI container like Scastie's). Clear it
+    // first: `install-unprivileged.sh` aborts with "<dir>/<arch> is not empty" if its target arch dir already exists,
+    // and offers no force/overwrite flag, so a leftover directory would otherwise wedge every subsequent run.
     val script =
       s"""set -e
-         |${exportPath}mkdir -p $q
+         |${exportPath}rm -rf $q
+         |mkdir -p $q
          |curl -fsSL $u | bash -s - -v $v $q
          |""".stripMargin
 

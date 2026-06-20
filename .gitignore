@@ -13,7 +13,7 @@
 # Vendored static tool binaries: fetched via vendor/refresh-tools.sh, not committed.
 # (rpm2cpio is a committed POSIX script and is intentionally NOT ignored.)
 scalapptainer/resources/scalapptainer/tools/linux-*/curl
-scalapptainer/resources/scalapptainer/tools/linux-*/cpio
+scalapptainer/resources/scalapptainer/tools/linux-*/busybox
 
 # Demo synthesis outputs (runtime-only work dir)
 /examples/work/
