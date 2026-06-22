@@ -126,7 +126,7 @@ require the Linux *environment* to already exist on non-Linux hosts (a one-time 
 |------|-------------|------------------------|
 | Linux | a POSIX shell | Apptainer (system install if present, else a user-mode install) |
 | Windows | **WSL2** enabled (`wsl --install`, one-time, needs admin) | Apptainer inside WSL2 |
-| macOS | **Lima** installed and an instance running (`brew install lima && limactl start`) | Apptainer inside the VM |
+| macOS | **Lima** installed and an Apptainer-ready instance running (`brew install lima && limactl start template:apptainer`) | Apptainer inside the VM |
 
 On each backend, Scalapptainer first looks for an `apptainer` already on the `PATH` and
 uses it if found; only when none exists does it perform its own user-mode install (into
@@ -136,16 +136,34 @@ you can override the bundled version simply by having your own on the `PATH`.
 If the required backend is missing, Scalapptainer throws a `BackendUnavailableException`
 with the exact commands to fix it.
 
+> **macOS first-run setup.** Start the Lima VM from its bundled `apptainer` template rather
+> than a bare `limactl start`:
+>
+> ```bash
+> brew install lima
+> limactl start template:apptainer          # creates an instance named "apptainer"
+> export SCALAPPTAINER_LIMA_INSTANCE=apptainer
+> ```
+>
+> The `apptainer` template preconfigures the VM for Apptainer's unprivileged user namespaces.
+> A plain default instance (`limactl start`) instead fails with
+> `ERROR: Could not write info to setgroups: Permission denied`. Because the template names
+> the instance `apptainer` (not the default `default`), point Scalapptainer at it via
+> `SCALAPPTAINER_LIMA_INSTANCE` (see [Configuration](#pinned-apptainer-version)).
+
 > **Unprivileged user namespaces are required.** Apptainer's rootless engine runs every
-> container inside an unprivileged user namespace, so the backend must permit creating one.
-> Most Linux hosts, WSL2 and Lima VMs do; **heavily sandboxed containers do not** — many CI
-> runners and online code playgrounds (e.g. **[Scastie](https://scastie.scala-lang.org)**)
-> run under a seccomp/AppArmor policy that blocks the `unshare(CLONE_NEWUSER)` syscall even
-> when the kernel itself allows it. **Apptainer cannot run in such an environment**, and there
-> is no unprivileged workaround. When Scalapptainer would do its user-mode install on such a
-> host it fails fast with a `UserNamespaceException` instead of hanging on a doomed install.
-> (Set `SCALAPPTAINER_SKIP_USERNS_CHECK=1` only if you are pointing it at a setuid-root
-> Apptainer that does not need user namespaces.)
+> container inside an unprivileged user namespace and maps your uid/gid into it, so the backend
+> must permit both. Most Linux hosts, WSL2 and properly-configured Lima VMs do; **heavily
+> sandboxed containers do not** — many CI runners and online code playgrounds (e.g.
+> **[Scastie](https://scastie.scala-lang.org)**) run under a seccomp/AppArmor policy that blocks
+> the `unshare(CLONE_NEWUSER)` syscall, or the uid/gid mapping step, even when the kernel itself
+> allows it. **Apptainer cannot run in such an environment**, and there is no unprivileged
+> workaround. Scalapptainer detects this both up front (its user-mode install fails fast with a
+> `UserNamespaceException` instead of installing into a backend where Apptainer can't run) and at
+> run time (a container that dies with `Could not write info to setgroups: Permission denied` is
+> re-reported as a `UserNamespaceException` with backend-specific fixes — see
+> [Troubleshooting](#troubleshooting)). (Set `SCALAPPTAINER_SKIP_USERNS_CHECK=1` only if you are
+> pointing it at a setuid-root Apptainer that does not need user namespaces.)
 
 > **You do not need to install `cpio`, `curl`, `rpm2cpio` or any other helper tools.**
 > The unprivileged Apptainer installer needs them, but Scalapptainer takes care of its own
@@ -310,6 +328,38 @@ Configuration via environment variables:
 - `SCALAPPTAINER_APPTAINER_VERSION`: override the pinned Apptainer version to install.
 - `SCALAPPTAINER_INSTALLER_URL`: override the unprivileged installer script URL
   (default: the `install-unprivileged.sh` from the pinned release's tag).
+
+## Troubleshooting
+
+### `Could not write info to setgroups: Permission denied`
+
+Usually followed by `Error while waiting event for user namespace mappings: no event received`.
+Apptainer's rootless engine could create a user namespace but was **blocked from writing its
+uid/gid mapping** — it is not a problem with your image or code. Scalapptainer re-reports this as
+a `UserNamespaceException` with the fix for your backend:
+
+- **macOS (Lima).** The default Lima VM is not configured for this; a plain `limactl start`
+  produces exactly this error. Recreate the VM from Lima's bundled `apptainer` template and point
+  Scalapptainer at it:
+  ```bash
+  limactl stop default && limactl delete default   # if you created a plain default VM
+  limactl start template:apptainer
+  export SCALAPPTAINER_LIMA_INSTANCE=apptainer
+  ```
+- **Linux.** The host (or the container/VM you are in) restricts unprivileged user namespaces:
+  ```bash
+  # Ubuntu 23.10+/24.04 (AppArmor restriction):
+  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+  # Older Debian/RHEL kernels:
+  sudo sysctl -w kernel.unprivileged_userns_clone=1
+  sudo sysctl -w user.max_user_namespaces=15000
+  ```
+  If you are running **inside another container** (Docker/Podman/CI), launch it so it can nest
+  user namespaces (keep `CAP_SETUID`/`CAP_SETGID`, avoid a `setgroups`-restricting seccomp
+  profile) or run on a real host/VM. Locked-down playgrounds such as Scastie block this with no
+  unprivileged workaround.
+- **Windows (WSL2).** Unusual — confirm the distro is WSL2, not WSL1, with `wsl -l -v` (the
+  `VERSION` column must read `2`).
 
 ## Building from source
 

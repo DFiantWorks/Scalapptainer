@@ -22,22 +22,98 @@ final class ApptainerCommandException(val result: ProcResult)
 final class InstallationException(message: String, cause: Throwable = null)
     extends ScalapptainerException(message, cause)
 
-/** Thrown when Scalapptainer would install Apptainer in user mode but the backend forbids creating unprivileged user
-  * namespaces — which Apptainer's rootless engine needs to run containers. The kernel may permit them while the
-  * container sandbox (seccomp/AppArmor) still denies the `unshare(CLONE_NEWUSER)` syscall, as on locked-down CI runners
-  * and online playgrounds (e.g. Scastie). Checked only at install time; a setuid-root or already-installed Apptainer is
-  * not re-checked.
+/** Thrown when the backend cannot provide the unprivileged user namespace Apptainer's rootless engine needs to run a
+  * container. This surfaces in two ways, both funnelled here with backend-specific remedies:
+  *
+  *   - **proactively**, at install time, when [[Backend.unprivilegedUsernsBlocked]] detects the failure up front
+  *     (`UserNamespaceException.atInstall`); and
+  *   - **reactively**, when an Apptainer command we run fails with the tell-tale signature — typically
+  *     `Could not write info to setgroups: Permission denied` followed by
+  *     `Error while waiting event for user namespace mappings: no event received`
+  *     (`UserNamespaceException.atRuntime`), which catches it even for a system/managed Apptainer that skipped the
+  *     install-time probe.
+  *
+  * The kernel may permit creating a namespace while the sandbox (seccomp/AppArmor) or an already-nested namespace still
+  * blocks writing the uid/gid mapping — common on locked-down CI runners, online playgrounds (e.g. Scastie), a plain
+  * (non-`apptainer`-template) Lima VM, or recent distros that restrict unprivileged user namespaces.
   */
-final class UserNamespaceException(backendName: String)
-    extends ScalapptainerException(
-      s"""This $backendName environment forbids creating unprivileged user namespaces, which Apptainer's rootless
-         |engine needs to run containers. The kernel may allow them while the container sandbox (seccomp/AppArmor)
-         |still blocks the unshare(CLONE_NEWUSER) syscall — common in restricted CI runners and online code
-         |playgrounds such as Scastie.
-         |
-         |There is no unprivileged workaround: Apptainer needs either a setuid-root install (requires root) or the
-         |ability to create a user namespace. Run on a host, VM or CI that permits unprivileged user namespaces.
-         |
-         |If you are pointing Scalapptainer at a setuid-root Apptainer that does not need user namespaces, set
-         |SCALAPPTAINER_SKIP_USERNS_CHECK=1 to skip this check.""".stripMargin
+final class UserNamespaceException(message: String) extends ScalapptainerException(message)
+
+object UserNamespaceException {
+
+  /** True if `text` (a command's combined stderr/stdout) carries the signature of a failed unprivileged user-namespace
+    * setup — Apptainer's rootless engine, or our own `unshare` probe. Used to turn an opaque non-zero exit into an
+    * actionable [[UserNamespaceException]].
+    */
+  def looksLikeUsernsFailure(text: String): Boolean = {
+    val t = text.toLowerCase
+    t.contains("setgroups") ||
+    t.contains("user namespace mappings") ||
+    t.contains("no event received") ||
+    t.contains("failed to create user namespace") ||
+    (t.contains("unshare") && (t.contains("operation not permitted") || t.contains("permission denied")))
+  }
+
+  /** Built when the install-time probe ([[Backend.unprivilegedUsernsBlocked]]) shows the backend cannot map a user
+    * namespace, before any container is run.
+    */
+  def atInstall(backend: Backend): UserNamespaceException =
+    new UserNamespaceException(
+      s"""The ${backend.name} backend forbids the unprivileged user namespace Apptainer's rootless engine needs to run
+         |containers: creating one (or writing its uid/gid mapping) is denied. Scalapptainer detected this up front,
+         |before fetching and installing Apptainer into a backend where it could never run.
+         |${remedy(backend)}""".stripMargin
     )
+
+  /** Built when a container command actually failed with the user-namespace signature (see [[looksLikeUsernsFailure]]),
+    * e.g. on a system/managed Apptainer that was never subjected to the install-time probe.
+    */
+  def atRuntime(backend: Backend, observed: String): UserNamespaceException =
+    new UserNamespaceException(
+      s"""Apptainer could not set up the unprivileged user namespace its rootless engine needs to run this container,
+         |in the ${backend.name} backend:
+         |${indent(observed.trim)}
+         |
+         |This is not a problem with the image or your code — the backend is blocking Apptainer from writing the user
+         |namespace's uid/gid mapping (the `setgroups`/mapping step).
+         |${remedy(backend)}""".stripMargin
+    )
+
+  private def indent(s: String): String =
+    s.linesIterator.map("    " + _).mkString("\n")
+
+  /** Backend-specific advice for restoring unprivileged user namespaces. */
+  private def remedy(backend: Backend): String = backend.os match {
+    case Os.MacOS =>
+      """
+        |On macOS the Lima VM must be configured for Apptainer's unprivileged user namespaces — the default Lima
+        |instance is not. Recreate it from Lima's bundled `apptainer` template:
+        |    limactl stop   <instance>   # if you started a plain default VM, stop and delete it
+        |    limactl delete <instance>
+        |    limactl start template:apptainer
+        |    export SCALAPPTAINER_LIMA_INSTANCE=apptainer
+        |""".stripMargin
+    case Os.Windows =>
+      """
+        |On Windows this is unusual: WSL2 normally permits unprivileged user namespaces. Make sure the distro is WSL2,
+        |not WSL1 (WSL1 cannot create them) — check with:
+        |    wsl -l -v        (the VERSION column must read 2; convert with `wsl --set-version <distro> 2`)
+        |""".stripMargin
+    case _ =>
+      """
+        |On Linux this usually means the host — or the container/VM Scalapptainer runs inside — restricts unprivileged
+        |user namespaces. Depending on the system, one of:
+        |  - Ubuntu 23.10+/24.04 restrict them via AppArmor; allow them with:
+        |        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        |  - Older Debian/RHEL kernels may need them enabled:
+        |        sudo sysctl -w kernel.unprivileged_userns_clone=1
+        |        sudo sysctl -w user.max_user_namespaces=15000
+        |  - If you are running inside another container (Docker/Podman/CI), launch it so it can nest user namespaces
+        |    (e.g. do not drop CAP_SETUID/CAP_SETGID, avoid a `setgroups`-restricting seccomp profile), or run on a
+        |    real host/VM instead.
+        |
+        |Heavily sandboxed environments (many CI runners, online playgrounds such as Scastie) block this with no
+        |unprivileged workaround — there Apptainer needs a setuid-root install, which requires root.
+        |""".stripMargin
+  }
+}
