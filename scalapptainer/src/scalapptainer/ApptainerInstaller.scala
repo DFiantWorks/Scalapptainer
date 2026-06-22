@@ -60,7 +60,7 @@ final class ApptainerInstaller(
     // rootless engine needs them to run anything). Fail fast and clearly here, before fetching tens of MB of RPMs.
     // A setuid-root or already-installed Apptainer never reaches this point, so it is never subjected to the check.
     if (!sys.env.contains("SCALAPPTAINER_SKIP_USERNS_CHECK") && backend.unprivilegedUsernsBlocked)
-      throw new UserNamespaceException(backend.name)
+      throw UserNamespaceException.atInstall(backend)
 
     val pathPrefix = VendoredTools.ensure(backend)
     val exportPath =

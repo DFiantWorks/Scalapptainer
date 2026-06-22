@@ -50,21 +50,55 @@ object BackendTests extends TestSuite {
       assert(b.arch == Arch.Aarch64)
     }
 
-    test("WSL2 checkAvailable passes when probe succeeds") {
-      val r = new RecordingRunner(spec => if (spec.argv == Seq("wsl.exe", "-e", "true")) ok(spec) else fail(spec))
+    test("WSL2 checkAvailable passes for a WSL2 distro") {
+      val r = new RecordingRunner(spec =>
+        spec.argv match {
+          case Seq("wsl.exe", "-e", "true")                            => ok(spec)
+          case Seq("wsl.exe", "-e", "cat", "/proc/sys/kernel/osrelease") => ok(spec, "5.15.167.4-microsoft-standard-WSL2")
+          case _                                                       => fail(spec)
+        }
+      )
       new Wsl2Backend(r, BackendConfig()).checkAvailable() // no throw
     }
 
-    test("WSL2 checkAvailable instructs to install when unavailable") {
+    test("WSL2 checkAvailable: wsl.exe present but no distro -> list/install guidance") {
+      // wsl.exe runs (returns a result) but the distro probe exits non-zero.
       val r = new RecordingRunner(_ => ProcResult(1, "", "", Nil))
       val ex = assertThrows[BackendUnavailableException](new Wsl2Backend(r, BackendConfig()).checkAvailable())
-      assert(ex.getMessage.contains("wsl --install"))
+      assert(ex.getMessage.contains("wsl --list --verbose"))
+      assert(ex.getMessage.contains("wsl --install -d Ubuntu"))
     }
 
     test("WSL2 checkAvailable handles a missing wsl.exe (thrown)") {
       val r = new RecordingRunner(_ => throw new RuntimeException("not found"))
       val ex = assertThrows[BackendUnavailableException](new Wsl2Backend(r, BackendConfig()).checkAvailable())
       assert(ex.getMessage.contains("WSL2 is required"))
+      assert(ex.getMessage.contains("wsl --install"))
+    }
+
+    test("WSL2 checkAvailable rejects a WSL1 distro with conversion instructions") {
+      val r = new RecordingRunner(spec =>
+        spec.argv match {
+          case Seq("wsl.exe", "-e", "true")                            => ok(spec)
+          case Seq("wsl.exe", "-e", "cat", "/proc/sys/kernel/osrelease") => ok(spec, "4.4.0-19041-Microsoft")
+          case _                                                       => fail(spec)
+        }
+      )
+      val ex = assertThrows[BackendUnavailableException](new Wsl2Backend(r, BackendConfig()).checkAvailable())
+      assert(ex.getMessage.contains("WSL1"))
+      assert(ex.getMessage.contains("wsl --set-version"))
+    }
+
+    test("WSL2 checkAvailable does not misclassify a custom-named WSL2 kernel as WSL1") {
+      // A custom-compiled WSL2 kernel may carry neither 'microsoft' nor 'WSL2' — must not be flagged WSL1.
+      val r = new RecordingRunner(spec =>
+        spec.argv match {
+          case Seq("wsl.exe", "-e", "true")                            => ok(spec)
+          case Seq("wsl.exe", "-e", "cat", "/proc/sys/kernel/osrelease") => ok(spec, "6.6.0-mycustom")
+          case _                                                       => fail(spec)
+        }
+      )
+      new Wsl2Backend(r, BackendConfig()).checkAvailable() // no throw
     }
 
     test("Lima checkAvailable: missing limactl -> brew instructions") {
@@ -73,7 +107,7 @@ object BackendTests extends TestSuite {
       assert(ex.getMessage.contains("brew install lima"))
     }
 
-    test("Lima checkAvailable: instance not running -> start instructions") {
+    test("Lima checkAvailable: stopped instance -> start instructions") {
       val r = new RecordingRunner(spec =>
         spec.argv match {
           case Seq("limactl", "--version") => ok(spec, "limactl version 1.0.0")
@@ -85,6 +119,44 @@ object BackendTests extends TestSuite {
         new LimaBackend(r, BackendConfig(limaInstance = "default")).checkAvailable()
       )
       assert(ex.getMessage.contains("limactl start default"))
+      assert(ex.getMessage.contains("not running"))
+    }
+
+    test("Lima checkAvailable: missing instance -> create-from-template instructions") {
+      // `limactl list <name>` succeeds with empty output when the instance does not exist.
+      val r = new RecordingRunner(spec =>
+        spec.argv match {
+          case Seq("limactl", "--version") => ok(spec, "limactl version 1.0.0")
+          case Seq("limactl", "list", _*)  => ok(spec, "")
+          case _                           => ok(spec)
+        }
+      )
+      val ex = assertThrows[BackendUnavailableException](
+        new LimaBackend(r, BackendConfig(limaInstance = "default")).checkAvailable()
+      )
+      assert(ex.getMessage.contains("does not exist"))
+      assert(ex.getMessage.contains("template:apptainer"))
+      assert(ex.getMessage.contains("SCALAPPTAINER_LIMA_INSTANCE"))
+    }
+
+    test("Lima missing limactl message recommends the apptainer template") {
+      val r = new RecordingRunner(_ => throw new RuntimeException("no limactl"))
+      val ex = assertThrows[BackendUnavailableException](new LimaBackend(r, BackendConfig()).checkAvailable())
+      assert(ex.getMessage.contains("template:apptainer"))
+    }
+
+    test("runShell verifies backend availability first") {
+      // A stopped Lima instance must surface BackendUnavailableException from a provisioning
+      // shell-out (e.g. resolving $HOME), not a raw failure deep in the call stack.
+      val r = new RecordingRunner(spec =>
+        spec.argv match {
+          case Seq("limactl", "--version") => ok(spec, "limactl version 1.0.0")
+          case Seq("limactl", "list", _*)  => ok(spec, "Stopped")
+          case _                           => ok(spec)
+        }
+      )
+      val b = new LimaBackend(r, BackendConfig(limaInstance = "default"))
+      assertThrows[BackendUnavailableException](b.runShell("printf hi"))
     }
 
     test("Lima checkAvailable passes when instance running") {

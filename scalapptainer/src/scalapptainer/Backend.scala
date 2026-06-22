@@ -47,9 +47,17 @@ abstract class Backend(val runner: CommandRunner) {
   final def wrapExec(program: String, args: Seq[String]): Seq[String] =
     commandPrefix ++ (program +: args)
 
-  /** Run a `bash` snippet inside the backend, capturing its output. */
-  final def runShell(script: String, stdin: Option[String] = None): ProcResult =
+  /** Run a `bash` snippet inside the backend, capturing its output.
+    *
+    * Verifies the backend prerequisite first ([[checkAvailable]]), so provisioning shell-outs (`home`, `cacheDir`,
+    * `mkdir`, ...) surface the actionable [[BackendUnavailableException]] rather than a raw "command not found" from a
+    * missing `limactl`/`wsl.exe` or a cryptic error from a stopped VM. The check is memoized, so it costs nothing after
+    * the first success, and the per-backend probe uses direct host argv (not `runShell`), so there is no recursion.
+    */
+  final def runShell(script: String, stdin: Option[String] = None): ProcResult = {
+    checkAvailable()
     runner.run(ProcSpec(commandPrefix ++ Seq("bash", "-lc", script), stdin = stdin))
+  }
 
   private val commandCache = scala.collection.concurrent.TrieMap.empty[String, Boolean]
 
@@ -71,15 +79,19 @@ abstract class Backend(val runner: CommandRunner) {
   /** The backend CPU architecture (resolved once via `uname -m`). */
   lazy val arch: Arch = Arch.parse(runShell("uname -m").throwIfFailed().out)
 
-  /** Whether this backend forbids creating an unprivileged user namespace (resolved once).
+  /** Whether this backend forbids the unprivileged user namespace Apptainer's rootless engine needs (resolved once).
     *
-    * Apptainer's rootless engine needs one; some sandboxed containers (restrictive seccomp/AppArmor) deny the
-    * `unshare(CLONE_NEWUSER)` syscall even when the kernel sysctls (`max_user_namespaces`, `unprivileged_userns_clone`)
-    * permit it. Detected by actually attempting to create one: an explicit permission denial counts as blocked, while a
-    * missing `unshare` (we can't tell) does not — so we never false-positive on a backend that simply lacks the probe.
+    * We probe with `unshare -rU true`, which both *creates* a user namespace and *writes the uid/gid mapping* (and the
+    * `deny` to `/proc/self/setgroups` that precedes the gid map). That second step is the one that fails on locked-down
+    * hosts — a bare `unshare -U` (create only) succeeds there, so the engine would still die later with
+    * `Could not write info to setgroups: Permission denied`. Probing the full map dance reproduces exactly what
+    * Apptainer does, so the install-time guard catches that case up front instead of letting a doomed container run.
+    *
+    * An explicit permission denial counts as blocked; a missing `unshare` (we can't tell) does not — so we never
+    * false-positive on a backend that simply lacks the probe binary.
     */
   lazy val unprivilegedUsernsBlocked: Boolean = {
-    val r = runShell("unshare -U true")
+    val r = runShell("unshare -rU true")
     if (r.succeeded) false
     else {
       val msg = s"${r.out}\n${r.err}".toLowerCase
@@ -175,6 +187,9 @@ final class Wsl2Backend(runner: CommandRunner, config: BackendConfig) extends Ba
 
   protected def commandPrefix: Seq[String] = Seq("wsl.exe") ++ distroOpt ++ Seq("-e")
 
+  /** ` (distro 'X')` when a specific distro was requested, else empty — for sharpening error messages. */
+  private def distroNote: String = config.wslDistro.fold("")(d => s" (distro '$d')")
+
   /** Map a Windows path (e.g. `C:\Users\me\img.sif`) to its WSL path (`/mnt/c/Users/me/img.sif`). Paths that already
     * look POSIX are passed through.
     */
@@ -188,23 +203,65 @@ final class Wsl2Backend(runner: CommandRunner, config: BackendConfig) extends Ba
     }
   }
 
-  protected def probeAvailable(): Unit = {
-    val ok = tryHost(commandPrefix :+ "true").exists(_.succeeded)
-    if (!ok)
-      throw new BackendUnavailableException(
-        s"""WSL2 is required to run Apptainer on Windows, but it does not appear to be available${config.wslDistro.fold(
-            ""
-          )(d => s" (distro '$d')")}.
-           |
-           |Install it from an elevated PowerShell, then restart Windows:
-           |    wsl --install
-           |
-           |Verify with:
-           |    wsl --status
-           |
-           |Docs: https://learn.microsoft.com/windows/wsl/install""".stripMargin
-      )
-  }
+  protected def probeAvailable(): Unit =
+    // tryHost returns None only when `wsl.exe` itself could not be executed (missing); a Some with a
+    // non-zero exit means wsl.exe ran but the distro could not start. Distinguishing the two lets us
+    // give the right fix instead of a single catch-all "WSL not available" message.
+    tryHost(commandPrefix :+ "true") match {
+      case None =>
+        throw new BackendUnavailableException(
+          s"""WSL2 is required to run Apptainer on Windows, but `wsl.exe` could not be run$distroNote.
+             |
+             |Install it from an elevated PowerShell, then restart Windows:
+             |    wsl --install
+             |
+             |Verify with:
+             |    wsl --status
+             |
+             |Docs: https://learn.microsoft.com/windows/wsl/install""".stripMargin
+        )
+
+      case Some(r) if r.failed =>
+        throw new BackendUnavailableException(
+          s"""WSL is installed but no usable Linux distribution could be started$distroNote.
+             |
+             |List what you have (the VERSION column must read 2):
+             |    wsl --list --verbose
+             |
+             |Install a distribution if you have none (one-time):
+             |    wsl --install -d Ubuntu
+             |
+             |If a distro exists but won't start, enable the "Virtual Machine Platform" Windows feature
+             |and virtualization in your BIOS/UEFI, then restart Windows.
+             |
+             |Docs: https://learn.microsoft.com/windows/wsl/install""".stripMargin
+        )
+
+      case Some(_) =>
+        // The distro is reachable — but reject WSL1, the Windows analogue of a misconfigured Lima VM:
+        // it has no real Linux kernel, so Apptainer's rootless engine (which needs user namespaces) can
+        // never run there. The WSL2 kernel's `osrelease` carries a `-WSL2` suffix; a WSL1 kernel reads
+        // like `4.4.0-...-Microsoft`. We flag WSL1 only when the kernel is clearly a Microsoft one that
+        // lacks the WSL2 marker, so a user's custom-built WSL2 kernel is never misclassified.
+        val osrelease = tryHost(commandPrefix ++ Seq("cat", "/proc/sys/kernel/osrelease"))
+          .filter(_.succeeded)
+          .map(_.out.toLowerCase)
+          .getOrElse("")
+        if (osrelease.contains("microsoft") && !osrelease.contains("wsl2"))
+          throw new BackendUnavailableException(
+            s"""The WSL distribution$distroNote runs on WSL1, which has no real Linux kernel and cannot run
+               |Apptainer (its rootless engine needs user namespaces, unavailable on WSL1).
+               |
+               |Find the distro name and convert it to WSL2, then restart WSL:
+               |    wsl --list --verbose
+               |    wsl --set-version <distro> 2
+               |    wsl --shutdown
+               |
+               |(Or point Scalapptainer at a WSL2 distro via SCALAPPTAINER_WSL_DISTRO.)
+               |
+               |Docs: https://learn.microsoft.com/windows/wsl/basic-commands#set-wsl-version""".stripMargin
+          )
+    }
 }
 
 /** macOS: Apptainer runs inside a Lima VM, invoked through `limactl shell`. */
@@ -234,20 +291,44 @@ final class LimaBackend(runner: CommandRunner, config: BackendConfig) extends Ba
       throw new BackendUnavailableException(
         """Lima is required to run Apptainer on macOS, but `limactl` was not found.
           |
-          |Install and start it with:
+          |Install it, then create and start an Apptainer-ready VM from Lima's bundled template:
           |    brew install lima
-          |    limactl start
+          |    limactl start template:apptainer
+          |
+          |Then point Scalapptainer at that instance:
+          |    export SCALAPPTAINER_LIMA_INSTANCE=apptainer
+          |
+          |(The `apptainer` template preconfigures the VM for Apptainer's unprivileged user
+          |namespaces; a plain `limactl start` default VM fails with a `setgroups: Permission
+          |denied` error instead.)
           |
           |Docs: https://lima-vm.io""".stripMargin
       )
 
-    val running = tryHost(Seq("limactl", "list", instance, "--format", "{{.Status}}"))
+    // `limactl list <name> --format {{.Status}}` prints the status for an existing instance and
+    // nothing (exit 0) for one that does not exist — so an empty result means "no such instance".
+    val status = tryHost(Seq("limactl", "list", instance, "--format", "{{.Status}}"))
       .filter(_.succeeded)
-      .map(_.out.toLowerCase)
-      .exists(_.contains("running"))
-    if (!running)
+      .map(_.out.trim.toLowerCase)
+      .getOrElse("")
+
+    if (status.isEmpty)
       throw new BackendUnavailableException(
-        s"""The Lima instance '$instance' is not running.
+        s"""The Lima instance '$instance' does not exist.
+           |
+           |Create and start an Apptainer-ready VM from Lima's bundled template:
+           |    limactl start template:apptainer
+           |
+           |Then point Scalapptainer at it:
+           |    export SCALAPPTAINER_LIMA_INSTANCE=apptainer
+           |
+           |(The `apptainer` template preconfigures the VM for Apptainer's unprivileged user
+           |namespaces; a plain default instance fails with `setgroups: Permission denied`.
+           |Set SCALAPPTAINER_LIMA_INSTANCE to target a different existing instance.)""".stripMargin
+      )
+    else if (!status.contains("running"))
+      throw new BackendUnavailableException(
+        s"""The Lima instance '$instance' exists but is not running (status: $status).
            |
            |Start it with:
            |    limactl start $instance

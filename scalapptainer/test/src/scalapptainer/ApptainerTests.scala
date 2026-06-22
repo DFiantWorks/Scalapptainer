@@ -394,5 +394,60 @@ object ApptainerTests extends TestSuite {
       assert(!r.scripts.exists(_.startsWith("unshare")))
       assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "run", "img.sif"))
     }
+
+    test("a run blocked by user namespaces at runtime is rethrown with actionable guidance") {
+      // A system/managed apptainer skips the install-time probe, so a backend that only blocks the *mapping* step
+      // (setgroups) surfaces it at run time; we recognise the signature and rethrow as UserNamespaceException.
+      val base = RecordingRunner.linuxEnv(present = Set("bash", "apptainer"))
+      val r = new RecordingRunner(spec =>
+        if (spec.argv.contains("run"))
+          ProcResult(
+            255,
+            "",
+            "ERROR  : Could not write info to setgroups: Permission denied\n" +
+              "ERROR  : Error while waiting event for user namespace mappings: no event received",
+            spec.argv
+          )
+        else base(spec)
+      )
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val ex = assertThrows[UserNamespaceException](app.run("img.sif"))
+      assert(ex.getMessage.contains("setgroups")) // echoes what Apptainer reported
+      assert(ex.getMessage.contains("apparmor_restrict_unprivileged_userns")) // Linux-specific remedy
+    }
+
+    test("a non-userns command failure is left as-is (not misclassified)") {
+      val base = RecordingRunner.linuxEnv(present = Set("bash", "apptainer"))
+      val r = new RecordingRunner(spec =>
+        if (spec.argv.contains("run")) ProcResult(1, "", "FATAL: no such image: img.sif", spec.argv)
+        else base(spec)
+      )
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val res = app.run("img.sif") // exec returns the failed result; no UserNamespaceException
+      assert(res.failed && res.err.contains("no such image"))
+    }
+
+    test("user-namespace remedy is tailored per backend") {
+      val noop = new RecordingRunner(spec => ProcResult(0, "", "", spec.argv))
+      val sig = "Could not write info to setgroups: Permission denied"
+
+      val linux = UserNamespaceException.atRuntime(new LinuxBackend(noop), sig)
+      assert(linux.getMessage.contains("apparmor_restrict_unprivileged_userns"))
+
+      val lima = UserNamespaceException.atRuntime(new LimaBackend(noop, BackendConfig()), sig)
+      assert(lima.getMessage.contains("template:apptainer"))
+      assert(lima.getMessage.contains("SCALAPPTAINER_LIMA_INSTANCE"))
+
+      val wsl = UserNamespaceException.atRuntime(new Wsl2Backend(noop, BackendConfig()), sig)
+      assert(wsl.getMessage.contains("WSL1"))
+    }
+
+    test("looksLikeUsernsFailure recognises the signature, not unrelated failures") {
+      assert(UserNamespaceException.looksLikeUsernsFailure("Could not write info to setgroups: Permission denied"))
+      assert(UserNamespaceException.looksLikeUsernsFailure("waiting event for user namespace mappings: no event received"))
+      assert(UserNamespaceException.looksLikeUsernsFailure("unshare: Operation not permitted"))
+      assert(!UserNamespaceException.looksLikeUsernsFailure("FATAL: no such image"))
+      assert(!UserNamespaceException.looksLikeUsernsFailure("disk quota exceeded"))
+    }
   }
 }

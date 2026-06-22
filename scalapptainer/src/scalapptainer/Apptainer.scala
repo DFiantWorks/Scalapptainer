@@ -35,7 +35,14 @@ sealed class Apptainer(val backend: Backend) {
   def exec(args: Seq[String], stdin: Option[String] = None): ProcResult = {
     backend.checkAvailable()
     val bin = installer.ensure()
-    backend.runner.run(ProcSpec(backend.wrapApptainer(bin, args), stdin = stdin))
+    val result = backend.runner.run(ProcSpec(backend.wrapApptainer(bin, args), stdin = stdin))
+    // A non-zero exit whose output carries the user-namespace signature (e.g. "Could not write info to setgroups")
+    // means the backend blocked Apptainer's rootless engine — rethrow as an actionable UserNamespaceException with
+    // per-backend remedies rather than letting the opaque stderr surface as a generic command failure. This also
+    // covers a system/managed Apptainer that was never subjected to the install-time user-namespace probe.
+    if (result.failed && UserNamespaceException.looksLikeUsernsFailure(s"${result.stderr}\n${result.stdout}"))
+      throw UserNamespaceException.atRuntime(backend, result.err)
+    result
   }
 
   /** Run `apptainer` with a raw argument vector, inheriting stdio (interactive). Returns the exit code. Use this for
