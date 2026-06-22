@@ -86,12 +86,12 @@ object UserNamespaceException {
   private def remedy(backend: Backend): String = backend.os match {
     case Os.MacOS =>
       """
-        |On macOS the Lima VM must be configured for Apptainer's unprivileged user namespaces — the default Lima
-        |instance is not. Recreate it from Lima's bundled `apptainer` template:
-        |    limactl stop   <instance>   # if you started a plain default VM, stop and delete it
-        |    limactl delete <instance>
-        |    limactl start template:apptainer
-        |    export SCALAPPTAINER_LIMA_INSTANCE=apptainer
+        |On macOS the Lima VM must be configured for Apptainer's unprivileged user namespaces. Scalapptainer
+        |auto-provisions one from Lima's `apptainer` template (which sets this up correctly), so this error means
+        |you pointed SCALAPPTAINER_LIMA_INSTANCE at a custom VM that lacks the configuration. Either unset it to
+        |use the auto-provisioned VM, or recreate yours from the template:
+        |    limactl stop   <instance> && limactl delete <instance>
+        |    limactl start --name=<instance> template:apptainer
         |""".stripMargin
     case Os.Windows =>
       """

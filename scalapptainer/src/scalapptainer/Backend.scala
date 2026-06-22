@@ -7,11 +7,16 @@ import scalapptainer.commands.ExecOptions
   * Defaults are read from the environment so consumers can point Scalapptainer at a specific WSL2 distro or Lima
   * instance without code changes:
   *   - `SCALAPPTAINER_WSL_DISTRO` (default: the WSL default distro)
-  *   - `SCALAPPTAINER_LIMA_INSTANCE` (default: `default`)
+  *   - `SCALAPPTAINER_LIMA_INSTANCE` (default: `scalapptainer` — the instance Scalapptainer owns and auto-provisions)
+  *   - `SCALAPPTAINER_LIMA_VM_TYPE` (default: Lima's own default; set e.g. `qemu` where `vz` cannot boot, such as Intel
+  *     CI runners without nested virtualization) — passed to `limactl start` only when auto-provisioning
+  *   - `SCALAPPTAINER_LIMA_AUTO` (default: on; set to `0` to disable auto-provisioning and get manual instructions)
   */
 final case class BackendConfig(
     wslDistro: Option[String] = sys.env.get("SCALAPPTAINER_WSL_DISTRO").filter(_.nonEmpty),
-    limaInstance: String = sys.env.getOrElse("SCALAPPTAINER_LIMA_INSTANCE", "default")
+    limaInstance: String = sys.env.getOrElse("SCALAPPTAINER_LIMA_INSTANCE", "scalapptainer"),
+    limaVmType: Option[String] = sys.env.get("SCALAPPTAINER_LIMA_VM_TYPE").filter(_.nonEmpty),
+    limaAutoProvision: Boolean = sys.env.getOrElse("SCALAPPTAINER_LIMA_AUTO", "1") != "0"
 )
 
 object BackendConfig {
@@ -285,55 +290,79 @@ final class LimaBackend(runner: CommandRunner, config: BackendConfig) extends Ba
   override def x11Forwarding: ExecOptions =
     ExecOptions.empty.env("DISPLAY" -> "host.lima.internal:0")
 
+  /** The lowercased Lima status of [[instance]] (e.g. `running`, `stopped`), or `None` when it does not exist.
+    *
+    * `limactl list <name> --format {{.Status}}` prints the status for an existing instance and nothing (exit 0) for
+    * one that does not exist, so empty output means "no such instance".
+    */
+  private def instanceStatus(): Option[String] =
+    tryHost(Seq("limactl", "list", instance, "--format", "{{.Status}}"))
+      .filter(_.succeeded)
+      .map(_.out.trim.toLowerCase)
+      .filter(_.nonEmpty)
+
+  private def vmTypeArg: Seq[String] = config.limaVmType.toSeq.map(t => s"--vm-type=$t")
+
+  /** Run a host command with the parent's stdio inherited, so `limactl`'s own provisioning progress (image download,
+    * VM boot, Apptainer install) is shown to the user live rather than buffered.
+    */
+  private def provision(argv: Seq[String]): Int = runner.runInteractive(ProcSpec(argv))
+
   protected def probeAvailable(): Unit = {
     val limaPresent = tryHost(Seq("limactl", "--version")).exists(_.succeeded)
     if (!limaPresent)
       throw new BackendUnavailableException(
         """Lima is required to run Apptainer on macOS, but `limactl` was not found.
           |
-          |Install it, then create and start an Apptainer-ready VM from Lima's bundled template:
+          |Install it (no admin needed):
           |    brew install lima
-          |    limactl start template:apptainer
           |
-          |Then point Scalapptainer at that instance:
-          |    export SCALAPPTAINER_LIMA_INSTANCE=apptainer
-          |
-          |(The `apptainer` template preconfigures the VM for Apptainer's unprivileged user
-          |namespaces; a plain `limactl start` default VM fails with a `setgroups: Permission
-          |denied` error instead.)
+          |Scalapptainer then creates and starts an Apptainer-ready Lima VM automatically on first use.
           |
           |Docs: https://lima-vm.io""".stripMargin
       )
 
-    // `limactl list <name> --format {{.Status}}` prints the status for an existing instance and
-    // nothing (exit 0) for one that does not exist — so an empty result means "no such instance".
-    val status = tryHost(Seq("limactl", "list", instance, "--format", "{{.Status}}"))
-      .filter(_.succeeded)
-      .map(_.out.trim.toLowerCase)
-      .getOrElse("")
+    instanceStatus() match {
+      case Some(s) if s.contains("running") => () // ready
 
-    if (status.isEmpty)
+      case _ if !config.limaAutoProvision =>
+        throw new BackendUnavailableException(
+          s"""No running Lima instance '$instance' (auto-provisioning is disabled via SCALAPPTAINER_LIMA_AUTO=0).
+             |
+             |Create and start an Apptainer-ready VM, then point Scalapptainer at it:
+             |    limactl start --name=$instance template:apptainer
+             |
+             |(The `apptainer` template configures the VM for Apptainer's unprivileged user namespaces; a plain
+             |default VM fails with `setgroups: Permission denied`. Set SCALAPPTAINER_LIMA_INSTANCE to use another.)
+             |
+             |Docs: https://lima-vm.io""".stripMargin
+        )
+
+      case Some(_) => // exists but stopped — start it
+        Console.err.println(s"[scalapptainer] Starting the stopped Lima VM '$instance'…")
+        provision(Seq("limactl", "start", instance))
+
+      case None => // does not exist — create and start from the apptainer template
+        Console.err.println(
+          s"""[scalapptainer] No Lima VM '$instance' found; provisioning one from Lima's `apptainer` template.
+             |[scalapptainer] This downloads an Ubuntu VM image and installs Apptainer — it may take a few minutes;
+             |[scalapptainer] Lima prints its own progress below. (Set SCALAPPTAINER_LIMA_AUTO=0 to disable this.)""".stripMargin
+        )
+        provision(Seq("limactl", "start", s"--name=$instance", "--tty=false") ++ vmTypeArg :+ "template:apptainer")
+    }
+
+    // Confirm the instance is now running; a failed/incomplete provision must not look available.
+    if (!instanceStatus().exists(_.contains("running")))
       throw new BackendUnavailableException(
-        s"""The Lima instance '$instance' does not exist.
+        s"""Could not bring the Lima instance '$instance' up (it is still not running after provisioning).
            |
-           |Create and start an Apptainer-ready VM from Lima's bundled template:
-           |    limactl start template:apptainer
+           |Try provisioning it manually and re-running:
+           |    limactl start --name=$instance template:apptainer
            |
-           |Then point Scalapptainer at it:
-           |    export SCALAPPTAINER_LIMA_INSTANCE=apptainer
+           |If `vz` cannot boot on this host (e.g. an Intel machine without nested virtualization), force QEMU:
+           |    SCALAPPTAINER_LIMA_VM_TYPE=qemu
            |
-           |(The `apptainer` template preconfigures the VM for Apptainer's unprivileged user
-           |namespaces; a plain default instance fails with `setgroups: Permission denied`.
-           |Set SCALAPPTAINER_LIMA_INSTANCE to target a different existing instance.)""".stripMargin
-      )
-    else if (!status.contains("running"))
-      throw new BackendUnavailableException(
-        s"""The Lima instance '$instance' exists but is not running (status: $status).
-           |
-           |Start it with:
-           |    limactl start $instance
-           |
-           |(Set SCALAPPTAINER_LIMA_INSTANCE to use a different instance.)""".stripMargin
+           |Docs: https://lima-vm.io""".stripMargin
       )
   }
 }

@@ -126,7 +126,7 @@ require the Linux *environment* to already exist on non-Linux hosts (a one-time 
 |------|-------------|------------------------|
 | Linux | a POSIX shell | Apptainer (system install if present, else a user-mode install) |
 | Windows | **WSL2** enabled (`wsl --install`, one-time, needs admin) | Apptainer inside WSL2 |
-| macOS | **Lima** installed and an Apptainer-ready instance running (`brew install lima && limactl start template:apptainer`) | Apptainer inside the VM |
+| macOS | **Lima** installed (`brew install lima`, no admin needed) | the Lima VM (auto-provisioned from the `apptainer` template) **and** Apptainer inside it |
 
 On each backend, Scalapptainer first looks for an `apptainer` already on the `PATH` and
 uses it if found; only when none exists does it perform its own user-mode install (into
@@ -136,20 +136,23 @@ you can override the bundled version simply by having your own on the `PATH`.
 If the required backend is missing, Scalapptainer throws a `BackendUnavailableException`
 with the exact commands to fix it.
 
-> **macOS first-run setup.** Start the Lima VM from its bundled `apptainer` template rather
-> than a bare `limactl start`:
+> **macOS first-run setup.** The only manual step is installing Lima itself:
 >
 > ```bash
-> brew install lima
-> limactl start template:apptainer          # creates an instance named "apptainer"
-> export SCALAPPTAINER_LIMA_INSTANCE=apptainer
+> brew install lima        # no admin / sudo required
 > ```
 >
-> The `apptainer` template preconfigures the VM for Apptainer's unprivileged user namespaces.
-> A plain default instance (`limactl start`) instead fails with
-> `ERROR: Could not write info to setgroups: Permission denied`. Because the template names
-> the instance `apptainer` (not the default `default`), point Scalapptainer at it via
-> `SCALAPPTAINER_LIMA_INSTANCE` (see [Configuration](#pinned-apptainer-version)).
+> On first use, Scalapptainer **auto-provisions** a Lima VM named `scalapptainer` from Lima's
+> bundled `apptainer` template (which installs Apptainer and configures the VM for unprivileged
+> user namespaces) and starts it — printing a one-time notice, with Lima's own download/boot
+> progress shown live. The first run therefore takes a few minutes while the VM image downloads;
+> later runs reuse the running VM. You do **not** need to run `limactl start` or set
+> `SCALAPPTAINER_LIMA_INSTANCE` yourself. To opt out and provision manually, set
+> `SCALAPPTAINER_LIMA_AUTO=0` (see [Configuration](#pinned-apptainer-version)).
+>
+> Because the `apptainer` template ships Apptainer, macOS uses *that* Apptainer (it is on the
+> VM's `PATH`) rather than a Scalapptainer user-mode install — so the pinned version below applies
+> to the Linux/WSL2 backends; on macOS the Apptainer version comes from the Lima template.
 
 > **Unprivileged user namespaces are required.** Apptainer's rootless engine runs every
 > container inside an unprivileged user namespace and maps your uid/gid into it, so the backend
@@ -324,8 +327,11 @@ overwriting it. A system-wide `apptainer` already on the backend PATH still wins
 Configuration via environment variables:
 
 - `SCALAPPTAINER_WSL_DISTRO`: target a specific WSL2 distro (default: the WSL default).
-- `SCALAPPTAINER_LIMA_INSTANCE`: target a specific Lima instance (default: `default`).
-- `SCALAPPTAINER_APPTAINER_VERSION`: override the pinned Apptainer version to install.
+- `SCALAPPTAINER_LIMA_INSTANCE`: the Lima instance to use / auto-provision (default: `scalapptainer`).
+- `SCALAPPTAINER_LIMA_VM_TYPE`: VM type passed to `limactl start` when auto-provisioning (default: Lima's own
+  default; set `qemu` where `vz` cannot boot, e.g. an Intel host without nested virtualization).
+- `SCALAPPTAINER_LIMA_AUTO`: set to `0` to disable macOS auto-provisioning and get manual instructions instead.
+- `SCALAPPTAINER_APPTAINER_VERSION`: override the pinned Apptainer version to install (Linux/WSL2 backends).
 - `SCALAPPTAINER_INSTALLER_URL`: override the unprivileged installer script URL
   (default: the `install-unprivileged.sh` from the pinned release's tag).
 
@@ -338,13 +344,13 @@ Apptainer's rootless engine could create a user namespace but was **blocked from
 uid/gid mapping** — it is not a problem with your image or code. Scalapptainer re-reports this as
 a `UserNamespaceException` with the fix for your backend:
 
-- **macOS (Lima).** The default Lima VM is not configured for this; a plain `limactl start`
-  produces exactly this error. Recreate the VM from Lima's bundled `apptainer` template and point
-  Scalapptainer at it:
+- **macOS (Lima).** Scalapptainer auto-provisions its `scalapptainer` VM from the `apptainer`
+  template, which is configured correctly — so you only hit this if you pointed
+  `SCALAPPTAINER_LIMA_INSTANCE` at a custom VM (e.g. a plain `default`) that lacks the config.
+  Either unset it to use the auto-provisioned VM, or recreate yours from the template:
   ```bash
-  limactl stop default && limactl delete default   # if you created a plain default VM
-  limactl start template:apptainer
-  export SCALAPPTAINER_LIMA_INSTANCE=apptainer
+  limactl stop <instance> && limactl delete <instance>
+  limactl start --name=<instance> template:apptainer
   ```
 - **Linux.** The host (or the container/VM you are in) restricts unprivileged user namespaces:
   ```bash

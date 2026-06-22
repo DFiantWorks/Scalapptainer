@@ -107,59 +107,90 @@ object BackendTests extends TestSuite {
       assert(ex.getMessage.contains("brew install lima"))
     }
 
-    test("Lima checkAvailable: stopped instance -> start instructions") {
+    test("Lima checkAvailable auto-provisions a missing instance from the apptainer template") {
+      var created = false
+      val r = new RecordingRunner(spec =>
+        spec.argv match {
+          case Seq("limactl", "--version")           => ok(spec, "limactl version 1.0.0")
+          case s if s.contains("template:apptainer") => created = true; ok(spec)
+          case Seq("limactl", "list", _*)            => ok(spec, if (created) "Running" else "") // "" => missing
+          case _                                     => ok(spec)
+        }
+      )
+      new LimaBackend(r, BackendConfig(limaInstance = "scalapptainer")).checkAvailable() // no throw
+      val create = r.calls.find(_.argv.contains("template:apptainer")).get
+      assert(create.argv.contains("--name=scalapptainer"))
+      assert(create.argv.contains("--tty=false"))
+    }
+
+    test("Lima checkAvailable auto-starts a stopped instance (no re-create)") {
+      var started = false
+      val r = new RecordingRunner(spec =>
+        spec.argv match {
+          case Seq("limactl", "--version")              => ok(spec, "limactl version 1.0.0")
+          case Seq("limactl", "start", "scalapptainer") => started = true; ok(spec)
+          case Seq("limactl", "list", _*)               => ok(spec, if (started) "Running" else "Stopped")
+          case _                                        => ok(spec)
+        }
+      )
+      new LimaBackend(r, BackendConfig(limaInstance = "scalapptainer")).checkAvailable() // no throw
+      assert(r.calls.exists(_.argv == Seq("limactl", "start", "scalapptainer")))
+      assert(!r.calls.exists(_.argv.contains("template:apptainer"))) // a stopped instance is not re-created
+    }
+
+    test("Lima provisioning forwards --vm-type when configured") {
+      var created = false
+      val r = new RecordingRunner(spec =>
+        spec.argv match {
+          case Seq("limactl", "--version")           => ok(spec, "limactl version 1.0.0")
+          case s if s.contains("template:apptainer") => created = true; ok(spec)
+          case Seq("limactl", "list", _*)            => ok(spec, if (created) "Running" else "")
+          case _                                     => ok(spec)
+        }
+      )
+      new LimaBackend(r, BackendConfig(limaInstance = "scalapptainer", limaVmType = Some("qemu"))).checkAvailable()
+      assert(r.calls.find(_.argv.contains("template:apptainer")).get.argv.contains("--vm-type=qemu"))
+    }
+
+    test("Lima checkAvailable throws if provisioning does not yield a running instance") {
       val r = new RecordingRunner(spec =>
         spec.argv match {
           case Seq("limactl", "--version") => ok(spec, "limactl version 1.0.0")
-          case Seq("limactl", "list", _*)  => ok(spec, "Stopped")
+          case Seq("limactl", "list", _*)  => ok(spec, "") // never becomes running
           case _                           => ok(spec)
         }
       )
       val ex = assertThrows[BackendUnavailableException](
-        new LimaBackend(r, BackendConfig(limaInstance = "default")).checkAvailable()
+        new LimaBackend(r, BackendConfig(limaInstance = "scalapptainer")).checkAvailable()
       )
-      assert(ex.getMessage.contains("limactl start default"))
-      assert(ex.getMessage.contains("not running"))
+      assert(ex.getMessage.contains("still not running"))
+      assert(ex.getMessage.contains("SCALAPPTAINER_LIMA_VM_TYPE"))
     }
 
-    test("Lima checkAvailable: missing instance -> create-from-template instructions") {
-      // `limactl list <name>` succeeds with empty output when the instance does not exist.
+    test("Lima checkAvailable falls back to instructions when auto-provisioning is disabled") {
       val r = new RecordingRunner(spec =>
         spec.argv match {
           case Seq("limactl", "--version") => ok(spec, "limactl version 1.0.0")
-          case Seq("limactl", "list", _*)  => ok(spec, "")
+          case Seq("limactl", "list", _*)  => ok(spec, "") // missing
           case _                           => ok(spec)
         }
       )
       val ex = assertThrows[BackendUnavailableException](
-        new LimaBackend(r, BackendConfig(limaInstance = "default")).checkAvailable()
+        new LimaBackend(r, BackendConfig(limaInstance = "scalapptainer", limaAutoProvision = false)).checkAvailable()
       )
-      assert(ex.getMessage.contains("does not exist"))
-      assert(ex.getMessage.contains("template:apptainer"))
-      assert(ex.getMessage.contains("SCALAPPTAINER_LIMA_INSTANCE"))
-    }
-
-    test("Lima missing limactl message recommends the apptainer template") {
-      val r = new RecordingRunner(_ => throw new RuntimeException("no limactl"))
-      val ex = assertThrows[BackendUnavailableException](new LimaBackend(r, BackendConfig()).checkAvailable())
-      assert(ex.getMessage.contains("template:apptainer"))
+      assert(ex.getMessage.contains("auto-provisioning is disabled"))
+      assert(!r.calls.exists(_.argv.contains("template:apptainer"))) // did not auto-create
     }
 
     test("runShell verifies backend availability first") {
-      // A stopped Lima instance must surface BackendUnavailableException from a provisioning
-      // shell-out (e.g. resolving $HOME), not a raw failure deep in the call stack.
-      val r = new RecordingRunner(spec =>
-        spec.argv match {
-          case Seq("limactl", "--version") => ok(spec, "limactl version 1.0.0")
-          case Seq("limactl", "list", _*)  => ok(spec, "Stopped")
-          case _                           => ok(spec)
-        }
-      )
-      val b = new LimaBackend(r, BackendConfig(limaInstance = "default"))
+      // A backend whose prerequisite is missing must surface BackendUnavailableException from a
+      // provisioning shell-out (e.g. resolving $HOME), not a raw failure deep in the call stack.
+      val r = new RecordingRunner(_ => throw new RuntimeException("no limactl"))
+      val b = new LimaBackend(r, BackendConfig())
       assertThrows[BackendUnavailableException](b.runShell("printf hi"))
     }
 
-    test("Lima checkAvailable passes when instance running") {
+    test("Lima checkAvailable passes when instance running (no provisioning)") {
       val r = new RecordingRunner(spec =>
         spec.argv match {
           case Seq("limactl", "--version") => ok(spec, "limactl version 1.0.0")
@@ -167,7 +198,9 @@ object BackendTests extends TestSuite {
           case _                           => ok(spec)
         }
       )
-      new LimaBackend(r, BackendConfig()).checkAvailable() // no throw
+      val b = new LimaBackend(r, BackendConfig())
+      b.checkAvailable() // no throw
+      assert(!r.calls.exists(_.argv.contains("start")))
     }
 
     test("checkAvailable is memoised: the probe runs only once") {
