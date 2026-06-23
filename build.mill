@@ -6,11 +6,21 @@ import mill.*
 import mill.scalalib.*
 import mill.scalalib.publish.*
 
+/** Every third-party version lives here so bumps happen in one place. (The Mill
+  * version itself is pinned in the `//| mill-version` header at the top — that
+  * magic comment is read before the build compiles, so it can't move here.)
+  */
+object Versions {
+  val scala = "3.3.8"
+  val osLib = "0.11.8"
+  val utest = "0.9.5"
+}
+
 object scalapptainer extends ScalaModule with SonatypeCentralPublishModule with mill.util.VcsVersionModule {
-  def scalaVersion = "3.3.8"
+  def scalaVersion = Versions.scala
 
   def mvnDeps = Seq(
-    mvn"com.lihaoyi::os-lib:0.11.8"
+    mvn"com.lihaoyi::os-lib:${Versions.osLib}"
   )
 
   // publishVersion is derived from git by VcsVersionModule: a tag `v0.1.0` publishes
@@ -31,7 +41,7 @@ object scalapptainer extends ScalaModule with SonatypeCentralPublishModule with 
   )
 
   object test extends ScalaTests {
-    def mvnDeps = Seq(mvn"com.lihaoyi::utest:0.9.5")
+    def mvnDeps = Seq(mvn"com.lihaoyi::utest:${Versions.utest}")
     def testFramework = "utest.runner.Framework"
   }
 }
@@ -42,7 +52,7 @@ object scalapptainer extends ScalaModule with SonatypeCentralPublishModule with 
   *   - `demo.GuiDemo` — run a GUI app (xclock) with the host display forwarded in.
   */
 object examples extends ScalaModule {
-  def scalaVersion = "3.3.8"
+  def scalaVersion = Versions.scala
   def moduleDeps = Seq(scalapptainer)
   def mainClass = Some("demo.HelloDemo")
 }

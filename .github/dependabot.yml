@@ -1,0 +1,16 @@
+# Keeps the GitHub Actions referenced across .github/workflows/*.yml current.
+# The `uses:` field can't be variableized, so versions stay inline in each
+# workflow; Dependabot scans all of them and opens PRs to bump in lockstep.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    # One PR per week for all action bumps rather than one PR per action.
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
