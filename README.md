@@ -320,7 +320,7 @@ Apptainer (entry point)
 
 ### Pinned Apptainer version
 
-Each Scalapptainer release pins a specific Apptainer version (currently **1.5.1**). The
+Each Scalapptainer release pins a specific Apptainer version. The
 user-mode install fetches exactly that release (`install-unprivileged.sh -v <version>`)
 and places it under `~/.scalapptainer/<version>/` inside the backend, so bumping the pin
 (e.g. to pick up an upstream fix) installs cleanly alongside the old one rather than

@@ -14,6 +14,12 @@ object Versions {
   val scala = "3.3.8"
   val osLib = "0.11.8"
   val utest = "0.9.5"
+
+  /** The Apptainer release Scalapptainer pins. Written into the `scalapptainer/build.properties`
+    * classpath resource (see `scalapptainer.buildProperties` below) and read back at runtime, so the
+    * pin lives here with every other version rather than hardcoded in the library source.
+    */
+  val apptainer = "1.5.1"
 }
 
 object scalapptainer extends ScalaModule with SonatypeCentralPublishModule with mill.util.VcsVersionModule {
@@ -22,6 +28,21 @@ object scalapptainer extends ScalaModule with SonatypeCentralPublishModule with 
   def mvnDeps = Seq(
     mvn"com.lihaoyi::os-lib:${Versions.osLib}"
   )
+
+  // Emit the pinned Apptainer version as a classpath resource so the single source of
+  // truth (Versions.apptainer) lives in this build file; the library reads the property
+  // at runtime rather than having the version hardcoded in its source.
+  def buildProperties = Task {
+    val dir = Task.dest
+    os.write(
+      dir / "scalapptainer" / "build.properties",
+      s"apptainer.version=${Versions.apptainer}\n",
+      createFolders = true
+    )
+    PathRef(dir)
+  }
+
+  def resources = Task { super.resources() :+ buildProperties() }
 
   // publishVersion is derived from git by VcsVersionModule: a tag `v0.1.0` publishes
   // as `0.1.0` (the leading `v` is stripped); off-tag commits get a `-<n>-<sha>`
