@@ -53,3 +53,63 @@ jobs:
           MILL_PGP_PASSPHRASE: ${{ secrets.MILL_PGP_PASSPHRASE }}
           MILL_SONATYPE_USERNAME: ${{ secrets.MILL_SONATYPE_USERNAME }}
           MILL_SONATYPE_PASSWORD: ${{ secrets.MILL_SONATYPE_PASSWORD }}
+
+  # Once the release is actually resolvable on Maven Central, rewrite the version
+  # strings in the README so the documented dependency coordinates always match the
+  # newest release — no manual bump. Gated on a real tag push (skipped for
+  # workflow_dispatch, where there is no released version to point at).
+  update-readme:
+    name: sync README version
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Commit the bump onto main, not the detached tag ref.
+          ref: main
+
+      - name: Wait for the release to be resolvable on Maven Central
+        shell: bash
+        run: |
+          # Poll the repository directly (repo1.maven.org), NOT the search index
+          # (search.maven.org), which can lag the actual artifact by tens of minutes.
+          VERSION="${GITHUB_REF_NAME#v}"
+          POM="https://repo1.maven.org/maven2/io/github/dfiantworks/scalapptainer_3/${VERSION}/scalapptainer_3-${VERSION}.pom"
+          echo "Polling $POM"
+          for i in $(seq 1 60); do
+            if curl -sfI "$POM" >/dev/null; then
+              echo "available after attempt ${i}"
+              exit 0
+            fi
+            echo "not yet (attempt ${i}/60) — sleeping 60s"
+            sleep 60
+          done
+          echo "timed out waiting for $POM" >&2
+          exit 1
+
+      - name: Rewrite the documented version in README
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # All three dependency syntaxes carry the version. Anchor each replacement
+          # to the "scalapptainer" coordinate so image names (…/scalapptainer-cowsay),
+          # the Apptainer pin, and other numbers are never touched.
+          sed -i -E \
+            -e "s|(scalapptainer:)[0-9][0-9.]*|\1${VERSION}|g" \
+            -e "s|(\"scalapptainer\" % \")[0-9][0-9.]*(\")|\1${VERSION}\2|g" \
+            README.md
+
+      - name: Commit and push if the README changed
+        shell: bash
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "README already on ${GITHUB_REF_NAME#v}; nothing to do"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "docs: sync README to ${GITHUB_REF_NAME#v} [skip ci]"
+          git push origin HEAD:main
