@@ -102,18 +102,25 @@ object UserNamespaceException {
     case _ =>
       """
         |On Linux this usually means the host — or the container/VM Scalapptainer runs inside — restricts unprivileged
-        |user namespaces. Depending on the system, one of:
-        |  - Ubuntu 23.10+/24.04 restrict them via AppArmor; allow them with:
+        |user namespaces. Either let Apptainer skip them, or re-enable them:
+        |  - Easiest, no security trade-off: install the setuid-root build of Apptainer, which does not use user
+        |    namespaces at all. Scalapptainer then picks it up from PATH automatically. On Debian/Ubuntu it lives in
+        |    the Apptainer PPA, so add that first:
+        |        sudo add-apt-repository -y ppa:apptainer/ppa
+        |        sudo apt-get update && sudo apt-get install -y apptainer-suid
+        |    (RPM distros: install the `apptainer-suid` package from EPEL or the Apptainer repo.)
+        |  - Or re-enable unprivileged user namespaces. Ubuntu 23.10+/24.04 restrict them via AppArmor:
         |        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-        |  - Older Debian/RHEL kernels may need them enabled:
+        |    Older Debian/RHEL kernels may instead need:
         |        sudo sysctl -w kernel.unprivileged_userns_clone=1
         |        sudo sysctl -w user.max_user_namespaces=15000
         |  - If you are running inside another container (Docker/Podman/CI), launch it so it can nest user namespaces
         |    (e.g. do not drop CAP_SETUID/CAP_SETGID, avoid a `setgroups`-restricting seccomp profile), or run on a
         |    real host/VM instead.
         |
-        |Heavily sandboxed environments (many CI runners, online playgrounds such as Scastie) block this with no
-        |unprivileged workaround — there Apptainer needs a setuid-root install, which requires root.
+        |Heavily sandboxed environments (many CI runners, online playgrounds such as Scastie) block user namespaces
+        |with no unprivileged workaround — there the setuid-root `apptainer-suid` build (which needs root to install)
+        |is the only option.
         |""".stripMargin
   }
 }

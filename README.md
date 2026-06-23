@@ -160,11 +160,13 @@ with the exact commands to fix it.
 > sandboxed containers do not** — many CI runners and online code playgrounds (e.g.
 > **[Scastie](https://scastie.scala-lang.org)**) run under a seccomp/AppArmor policy that blocks
 > the `unshare(CLONE_NEWUSER)` syscall, or the uid/gid mapping step, even when the kernel itself
-> allows it. **Apptainer cannot run in such an environment**, and there is no unprivileged
-> workaround. Scalapptainer detects this both up front (its user-mode install fails fast with a
-> `UserNamespaceException` instead of installing into a backend where Apptainer can't run) and at
-> run time (a container that dies with `Could not write info to setgroups: Permission denied` is
-> re-reported as a `UserNamespaceException` with backend-specific fixes — see
+> allows it. **Unprivileged Apptainer cannot run in such an environment** — the alternative is the
+> **setuid-root** build (`apptainer-suid` on Debian/Ubuntu), which doesn't use user namespaces but
+> needs root to install. Scalapptainer detects the user-namespace problem both up front (its
+> user-mode install fails fast with a `UserNamespaceException` instead of installing into a backend
+> where Apptainer can't run) and at run time (a container that dies with
+> `Could not write info to setgroups: Permission denied` is re-reported as a `UserNamespaceException`
+> with backend-specific fixes, including installing `apptainer-suid` — see
 > [Troubleshooting](#troubleshooting)). (Set `SCALAPPTAINER_SKIP_USERNS_CHECK=1` only if you are
 > pointing it at a setuid-root Apptainer that does not need user namespaces.)
 
@@ -352,7 +354,16 @@ a `UserNamespaceException` with the fix for your backend:
   limactl stop <instance> && limactl delete <instance>
   limactl start --name=<instance> template:apptainer
   ```
-- **Linux.** The host (or the container/VM you are in) restricts unprivileged user namespaces:
+- **Linux.** The host (or the container/VM you are in) restricts unprivileged user namespaces.
+  The simplest fix (no system-wide security change) is to install the **setuid-root** build of
+  Apptainer, which doesn't use user namespaces at all — Scalapptainer then uses it from `PATH`.
+  On Debian/Ubuntu it lives in the Apptainer PPA, so add that first:
+  ```bash
+  sudo add-apt-repository -y ppa:apptainer/ppa
+  sudo apt-get update && sudo apt-get install -y apptainer-suid
+  # RPM distros: install the apptainer-suid package from EPEL or the Apptainer repo
+  ```
+  Or re-enable unprivileged user namespaces instead:
   ```bash
   # Ubuntu 23.10+/24.04 (AppArmor restriction):
   sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
@@ -362,8 +373,8 @@ a `UserNamespaceException` with the fix for your backend:
   ```
   If you are running **inside another container** (Docker/Podman/CI), launch it so it can nest
   user namespaces (keep `CAP_SETUID`/`CAP_SETGID`, avoid a `setgroups`-restricting seccomp
-  profile) or run on a real host/VM. Locked-down playgrounds such as Scastie block this with no
-  unprivileged workaround.
+  profile) or run on a real host/VM. Locked-down playgrounds such as Scastie block user
+  namespaces with no unprivileged workaround — there `apptainer-suid` is the only option.
 - **Windows (WSL2).** Unusual — confirm the distro is WSL2, not WSL1, with `wsl -l -v` (the
   `VERSION` column must read `2`).
 

@@ -433,6 +433,7 @@ object ApptainerTests extends TestSuite {
 
       val linux = UserNamespaceException.atRuntime(new LinuxBackend(noop), sig)
       assert(linux.getMessage.contains("apparmor_restrict_unprivileged_userns"))
+      assert(linux.getMessage.contains("apptainer-suid")) // the no-sysctl setuid alternative
 
       val lima = UserNamespaceException.atRuntime(new LimaBackend(noop, BackendConfig()), sig)
       assert(lima.getMessage.contains("template:apptainer"))
