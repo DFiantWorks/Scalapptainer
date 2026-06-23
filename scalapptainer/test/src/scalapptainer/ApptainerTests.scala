@@ -263,6 +263,13 @@ object ApptainerTests extends TestSuite {
       )
     }
 
+    test("cleanEnv on the handle renders --cleanenv") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.image("/img.sif").cleanEnv().run()
+      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "run", "--cleanenv", "/img.sif"))
+    }
+
     test("withX11 binds the X11 socket and forwards DISPLAY (socket backend)") {
       val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), display = ":0"))
       val app = Apptainer.forBackend(new LinuxBackend(r))

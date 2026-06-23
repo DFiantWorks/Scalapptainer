@@ -35,6 +35,9 @@ final class ApptainerImage private[scalapptainer] (
   /** Add environment variables. */
   def env(vars: (String, String)*): ApptainerImage = updated(options.env(vars*))
 
+  /** Run with a clean environment (`--cleanenv`): don't inherit the host environment into the container. */
+  def cleanEnv(v: Boolean = true): ApptainerImage = updated(options.cleanEnv(v))
+
   /** Transform the underlying options — the escape hatch for the less-common flags (fakeroot, writable, pwd, nv, ...).
     */
   def withOptions(f: ExecOptions => ExecOptions): ApptainerImage = updated(f(options))
