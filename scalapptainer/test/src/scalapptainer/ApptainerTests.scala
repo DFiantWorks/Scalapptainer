@@ -263,6 +263,13 @@ object ApptainerTests extends TestSuite {
       )
     }
 
+    test("cleanEnv on the handle renders --cleanenv") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer")))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.image("/img.sif").cleanEnv().run()
+      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "run", "--cleanenv", "/img.sif"))
+    }
+
     test("withX11 binds the X11 socket and forwards DISPLAY (socket backend)") {
       val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), display = ":0"))
       val app = Apptainer.forBackend(new LinuxBackend(r))
@@ -433,6 +440,7 @@ object ApptainerTests extends TestSuite {
 
       val linux = UserNamespaceException.atRuntime(new LinuxBackend(noop), sig)
       assert(linux.getMessage.contains("apparmor_restrict_unprivileged_userns"))
+      assert(linux.getMessage.contains("apptainer-suid")) // the no-sysctl setuid alternative
 
       val lima = UserNamespaceException.atRuntime(new LimaBackend(noop, BackendConfig()), sig)
       assert(lima.getMessage.contains("template:apptainer"))
