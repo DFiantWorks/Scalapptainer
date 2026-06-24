@@ -375,7 +375,12 @@ object ApptainerTests extends TestSuite {
       // hasApptainer=true => the managed binary already exists on disk; resolve() returns it and install() — the only
       // place the userns check lives — is never reached, so a blocked sandbox does not matter here.
       val r = new RecordingRunner(
-        RecordingRunner.linuxEnv(present = Set("bash", "base64"), home = "/home/me", hasApptainer = true, usernsBlocked = true)
+        RecordingRunner.linuxEnv(
+          present = Set("bash", "base64"),
+          home = "/home/me",
+          hasApptainer = true,
+          usernsBlocked = true
+        )
       )
       val app = Apptainer.forBackend(new LinuxBackend(r))
       app.run("img.sif") // does not throw
@@ -477,7 +482,9 @@ object ApptainerTests extends TestSuite {
 
     test("looksLikeUsernsFailure recognises the signature, not unrelated failures") {
       assert(UserNamespaceException.looksLikeUsernsFailure("Could not write info to setgroups: Permission denied"))
-      assert(UserNamespaceException.looksLikeUsernsFailure("waiting event for user namespace mappings: no event received"))
+      assert(
+        UserNamespaceException.looksLikeUsernsFailure("waiting event for user namespace mappings: no event received")
+      )
       assert(UserNamespaceException.looksLikeUsernsFailure("unshare: Operation not permitted"))
       assert(!UserNamespaceException.looksLikeUsernsFailure("FATAL: no such image"))
       assert(!UserNamespaceException.looksLikeUsernsFailure("disk quota exceeded"))

@@ -292,8 +292,8 @@ final class LimaBackend(runner: CommandRunner, config: BackendConfig) extends Ba
 
   /** The lowercased Lima status of [[instance]] (e.g. `running`, `stopped`), or `None` when it does not exist.
     *
-    * `limactl list <name> --format {{.Status}}` prints the status for an existing instance and nothing (exit 0) for
-    * one that does not exist, so empty output means "no such instance".
+    * `limactl list <name> --format {{.Status}}` prints the status for an existing instance and nothing (exit 0) for one
+    * that does not exist, so empty output means "no such instance".
     */
   private def instanceStatus(): Option[String] =
     tryHost(Seq("limactl", "list", instance, "--format", "{{.Status}}"))
@@ -303,8 +303,8 @@ final class LimaBackend(runner: CommandRunner, config: BackendConfig) extends Ba
 
   private def vmTypeArg: Seq[String] = config.limaVmType.toSeq.map(t => s"--vm-type=$t")
 
-  /** Run a host command with the parent's stdio inherited, so `limactl`'s own provisioning progress (image download,
-    * VM boot, Apptainer install) is shown to the user live rather than buffered.
+  /** Run a host command with the parent's stdio inherited, so `limactl`'s own provisioning progress (image download, VM
+    * boot, Apptainer install) is shown to the user live rather than buffered.
     */
   private def provision(argv: Seq[String]): Int = runner.runInteractive(ProcSpec(argv))
 

@@ -66,7 +66,10 @@ object VendoredToolsTests extends TestSuite {
       // The vendored rpm2cpio shells out to `xzcat` for Apptainer's xz-compressed EL RPMs (this busybox has no `xz`
       // applet, only `xzcat`), so a bare container (e.g. Scastie's) that has cpio/gzip but no xz still gets it.
       val r = new RecordingRunner(
-        RecordingRunner.linuxEnv(present = Set("bash", "curl", "rpm2cpio", "gzip", "bzip2", "base64"), home = "/home/me")
+        RecordingRunner.linuxEnv(
+          present = Set("bash", "curl", "rpm2cpio", "gzip", "bzip2", "base64"),
+          home = "/home/me"
+        )
       )
       val result = VendoredTools.ensure(new LinuxBackend(r))
       assert(result.contains("/home/me/.scalapptainer/tools/bin"))
