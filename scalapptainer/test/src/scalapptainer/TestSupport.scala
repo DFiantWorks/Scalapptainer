@@ -42,8 +42,7 @@ object RecordingRunner {
     *   whether a Scalapptainer-managed apptainer already exists
     */
   def linuxEnv(
-      present: Set[String] =
-        Set("bash", "curl", "rpm2cpio", "cpio", "gzip", "bzip2", "xzcat", "unlzma", "base64"),
+      present: Set[String] = Set("bash", "curl", "rpm2cpio", "cpio", "gzip", "bzip2", "xzcat", "unlzma", "base64"),
       home: String = "/home/me",
       uname: String = "x86_64",
       hasApptainer: Boolean = false,
@@ -63,8 +62,7 @@ object RecordingRunner {
         // user-namespace probe: success = usable; an explicit denial = blocked sandbox
         if (usernsBlocked) ProcResult(1, "", "unshare: unshare(0x10000000): Operation not permitted", spec.argv)
         else ok()
-      }
-      else if (script.contains("""printf %s "$HOME"""")) ok(home)
+      } else if (script.contains("""printf %s "$HOME"""")) ok(home)
       else if (script.contains("""printf %s "$DISPLAY"""")) ok(display)
       else if (script == "uname -m") ok(uname)
       else if (script.startsWith("command -v ")) {

@@ -53,9 +53,10 @@ object BackendTests extends TestSuite {
     test("WSL2 checkAvailable passes for a WSL2 distro") {
       val r = new RecordingRunner(spec =>
         spec.argv match {
-          case Seq("wsl.exe", "-e", "true")                            => ok(spec)
-          case Seq("wsl.exe", "-e", "cat", "/proc/sys/kernel/osrelease") => ok(spec, "5.15.167.4-microsoft-standard-WSL2")
-          case _                                                       => fail(spec)
+          case Seq("wsl.exe", "-e", "true")                              => ok(spec)
+          case Seq("wsl.exe", "-e", "cat", "/proc/sys/kernel/osrelease") =>
+            ok(spec, "5.15.167.4-microsoft-standard-WSL2")
+          case _ => fail(spec)
         }
       )
       new Wsl2Backend(r, BackendConfig()).checkAvailable() // no throw
@@ -79,9 +80,9 @@ object BackendTests extends TestSuite {
     test("WSL2 checkAvailable rejects a WSL1 distro with conversion instructions") {
       val r = new RecordingRunner(spec =>
         spec.argv match {
-          case Seq("wsl.exe", "-e", "true")                            => ok(spec)
+          case Seq("wsl.exe", "-e", "true")                              => ok(spec)
           case Seq("wsl.exe", "-e", "cat", "/proc/sys/kernel/osrelease") => ok(spec, "4.4.0-19041-Microsoft")
-          case _                                                       => fail(spec)
+          case _                                                         => fail(spec)
         }
       )
       val ex = assertThrows[BackendUnavailableException](new Wsl2Backend(r, BackendConfig()).checkAvailable())
@@ -93,9 +94,9 @@ object BackendTests extends TestSuite {
       // A custom-compiled WSL2 kernel may carry neither 'microsoft' nor 'WSL2' — must not be flagged WSL1.
       val r = new RecordingRunner(spec =>
         spec.argv match {
-          case Seq("wsl.exe", "-e", "true")                            => ok(spec)
+          case Seq("wsl.exe", "-e", "true")                              => ok(spec)
           case Seq("wsl.exe", "-e", "cat", "/proc/sys/kernel/osrelease") => ok(spec, "6.6.0-mycustom")
-          case _                                                       => fail(spec)
+          case _                                                         => fail(spec)
         }
       )
       new Wsl2Backend(r, BackendConfig()).checkAvailable() // no throw
