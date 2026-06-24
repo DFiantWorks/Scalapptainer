@@ -7,8 +7,8 @@ import mill.scalalib.*
 import mill.scalalib.publish.*
 
 /** Every third-party version lives here so bumps happen in one place. (The Mill
-  * version itself is pinned in the `//| mill-version` header at the top — that
-  * magic comment is read before the build compiles, so it can't move here.)
+  * version itself is pinned in the build header's mill-version line at the top of
+  * this file; that header is read before the build compiles, so it can't move here.)
   */
 object Versions {
   val scala = "3.3.8"
