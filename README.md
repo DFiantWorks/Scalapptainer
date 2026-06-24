@@ -131,7 +131,10 @@ require the Linux *environment* to already exist on non-Linux hosts (a one-time 
 On each backend, Scalapptainer first looks for an `apptainer` already on the `PATH` and
 uses it if found; only when none exists does it perform its own user-mode install (into
 `~/.scalapptainer/<version>`). So a pre-installed system Apptainer is always preferred, and
-you can override the bundled version simply by having your own on the `PATH`.
+you can override the bundled version simply by having your own on the `PATH`. If that system
+Apptainer is *older* than the version this release pins, Scalapptainer still uses it but prints
+a one-time warning (you may be missing an upstream fix); silence it with
+`SCALAPPTAINER_SKIP_VERSION_CHECK=1`.
 
 If the required backend is missing, Scalapptainer throws a `BackendUnavailableException`
 with the exact commands to fix it.
@@ -336,6 +339,8 @@ Configuration via environment variables:
 - `SCALAPPTAINER_APPTAINER_VERSION`: override the pinned Apptainer version to install (Linux/WSL2 backends).
 - `SCALAPPTAINER_INSTALLER_URL`: override the unprivileged installer script URL
   (default: the `install-unprivileged.sh` from the pinned release's tag).
+- `SCALAPPTAINER_SKIP_VERSION_CHECK`: set to any non-empty value to silence the one-time warning emitted when a
+  system Apptainer on `PATH` is older than the pinned version.
 
 ## Troubleshooting
 

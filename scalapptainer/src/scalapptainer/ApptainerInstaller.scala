@@ -10,7 +10,8 @@ package scalapptainer
   * stays current — an older tagged script pins a now-EOL default distro whose packages have since been removed.
   *
   * Resolution order:
-  *   1. an `apptainer` already on the backend PATH (e.g. a system install);
+  *   1. an `apptainer` already on the backend PATH (e.g. a system install) — used as-is, but if its version is older
+  *      than the pinned one a one-time warning is emitted (silence with `SCALAPPTAINER_SKIP_VERSION_CHECK`);
   *   2. a previous Scalapptainer-managed install of the pinned version under the backend cache;
   *   3. a fresh unprivileged install via Apptainer's `install-unprivileged.sh`, run with [[VendoredTools]] on PATH so
   *      `curl`/`rpm2cpio`/`cpio` are present.
@@ -44,11 +45,30 @@ final class ApptainerInstaller(
   private def resolve(): String = {
     if (backend.hasCommand("apptainer")) {
       val p = backend.runShell("command -v apptainer").throwIfFailed().out
-      if (p.nonEmpty) return p
+      if (p.nonEmpty) {
+        warnIfSystemApptainerOutdated(p)
+        return p
+      }
     }
     if (isExecutable(managedBin)) return managedBin
     install()
     managedBin
+  }
+
+  /** A system Apptainer on PATH is used as-is (resolution step 1), even if it predates the version this Scalapptainer
+    * release pins — which is how someone keeps running on an older box, but also how they miss an upstream fix (e.g.
+    * the mksquashfs segfault fixed in 1.5.2). When the system version is older than the pinned one, emit a one-time
+    * heads-up. It is advisory only: nothing is changed and the system install is still used. Silence it by setting
+    * `SCALAPPTAINER_SKIP_VERSION_CHECK` (any non-empty value).
+    */
+  private def warnIfSystemApptainerOutdated(path: String): Unit = {
+    if (sys.env.get("SCALAPPTAINER_SKIP_VERSION_CHECK").exists(_.nonEmpty)) return
+    val r = backend.runShell(s"${ShellQuote.single(path)} --version")
+    if (r.failed) return
+    for {
+      found <- ApptainerInstaller.parseVersion(r.out)
+      if ApptainerInstaller.compareVersions(found, version) < 0
+    } ApptainerInstaller.warnOutdatedSystemVersionOnce(path, found, version)
   }
 
   private def isExecutable(path: String): Boolean =
@@ -130,4 +150,52 @@ object ApptainerInstaller {
       .get("SCALAPPTAINER_INSTALLER_URL")
       .filter(_.nonEmpty)
       .getOrElse("https://raw.githubusercontent.com/apptainer/apptainer/main/tools/install-unprivileged.sh")
+
+  /** Extract the dotted version number from `apptainer --version` output, e.g. `"apptainer version 1.5.2"` -> `Some(
+    * "1.5.2")`. Returns `None` if no version-looking token is found.
+    */
+  private[scalapptainer] def parseVersion(versionOutput: String): Option[String] =
+    """\d+(?:\.\d+)*(?:[-+][0-9A-Za-z.-]+)?""".r.findFirstIn(versionOutput.trim)
+
+  /** Compare two dotted version strings numerically: negative if `a < b`, zero if equal, positive if `a > b`. Numeric
+    * components are compared as integers (missing trailing components count as 0, so `1.5` == `1.5.0`). When the numeric
+    * parts are equal, a pre-release/build suffix (e.g. `-rc.1`) sorts *below* the plain release, matching SemVer.
+    */
+  private[scalapptainer] def compareVersions(a: String, b: String): Int = {
+    val numbered = """^(\d+(?:\.\d+)*)(.*)$""".r
+    def split(v: String): (Seq[Int], String) = v.trim match {
+      case numbered(nums, rest) => (nums.split('.').map(_.toInt).toSeq, rest)
+      case _                    => (Seq.empty, v.trim)
+    }
+    val (na, ra) = split(a)
+    val (nb, rb) = split(b)
+    val numericCmp =
+      (0 until math.max(na.length, nb.length)).iterator
+        .map(i => na.applyOrElse(i, (_: Int) => 0).compare(nb.applyOrElse(i, (_: Int) => 0)))
+        .find(_ != 0)
+        .getOrElse(0)
+    if (numericCmp != 0) numericCmp
+    else (ra.isEmpty, rb.isEmpty) match {
+      case (true, true)   => 0
+      case (true, false)  => 1 // a is a plain release, b has a pre-release suffix -> a is newer
+      case (false, true)  => -1
+      case (false, false) => ra.compare(rb)
+    }
+  }
+
+  @volatile private var versionWarned = false
+
+  /** Print the outdated-system-Apptainer heads-up at most once per process (see [[warnIfSystemApptainerOutdated]]). */
+  private[scalapptainer] def warnOutdatedSystemVersionOnce(path: String, found: String, pinned: String): Unit =
+    synchronized {
+      if (!versionWarned) {
+        versionWarned = true
+        Console.err.println(
+          s"[scalapptainer] the system Apptainer on PATH ($path) is version $found, older than the $pinned this " +
+            s"Scalapptainer release pins. It is being used as-is, but you may be missing upstream fixes. To use $pinned, " +
+            s"remove the system Apptainer from PATH (Scalapptainer will then install $pinned under ~/.scalapptainer), or " +
+            s"upgrade the system install. Silence this warning with SCALAPPTAINER_SKIP_VERSION_CHECK=1."
+        )
+      }
+    }
 }

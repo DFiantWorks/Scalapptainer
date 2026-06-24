@@ -50,28 +50,26 @@ object ApptainerTests extends TestSuite {
       val app = Apptainer.forBackend(new LinuxBackend(r))
       val img = app.build("def.def", name = "tools")
       assert(img.ref == "/home/me/.scalapptainer/images/tools.sif")
-      // cache dir created, then a build into it carrying the default parallelism cap
+      // cache dir created, then a plain build into it (no mksquashfs args by default)
       assert(r.scripts.exists(_.contains("mkdir -p '/home/me/.scalapptainer/images'")))
       assert(
         r.calls.last.argv ==
           Seq(
             "/usr/bin/apptainer",
             "build",
-            "--mksquashfs-args",
-            Apptainer.defaultMksquashfsArgs,
             "/home/me/.scalapptainer/images/tools.sif",
             "def.def"
           )
       )
     }
 
-    test("build's default mksquashfs cap is -processors (cores/4, min 1) and is overridable") {
-      assert(Apptainer.defaultMksquashfsArgs == s"-processors ${math.max(1, Runtime.getRuntime.availableProcessors() / 4)}")
+    test("build passes no mksquashfs args by default, and the explicit value verbatim when given") {
       val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
       val app = Apptainer.forBackend(new LinuxBackend(r))
-      app.build("def.def", name = "tools", mksquashfsArgs = Some("-processors 16"))
-      // the explicit value is used verbatim, and only once (the default is not also appended)
-      assert(r.calls.last.argv.containsSlice(Seq("--mksquashfs-args", "-processors 16")))
+      app.build("def.def", name = "plain")
+      assert(!r.calls.last.argv.contains("--mksquashfs-args")) // nothing passed unless the caller asks
+      app.build("def.def", name = "capped", mksquashfsArgs = Some("-processors 1"))
+      assert(r.calls.last.argv.containsSlice(Seq("--mksquashfs-args", "-processors 1")))
       assert(r.calls.last.argv.count(_ == "--mksquashfs-args") == 1)
     }
 
@@ -128,8 +126,6 @@ object ApptainerTests extends TestSuite {
         r.calls.last.argv == Seq(
           "/usr/bin/apptainer",
           "build",
-          "--mksquashfs-args",
-          Apptainer.defaultMksquashfsArgs,
           "/elsewhere/out.sif",
           "def.def"
         )
@@ -169,8 +165,6 @@ object ApptainerTests extends TestSuite {
           Seq(
             "/usr/bin/apptainer",
             "build",
-            "--mksquashfs-args",
-            Apptainer.defaultMksquashfsArgs,
             "/home/me/.scalapptainer/images/fromres.sif",
             "/home/me/.scalapptainer/build/sample.def"
           )
@@ -193,8 +187,6 @@ object ApptainerTests extends TestSuite {
           Seq(
             "/usr/bin/apptainer",
             "build",
-            "--mksquashfs-args",
-            Apptainer.defaultMksquashfsArgs,
             "/home/me/.scalapptainer/images/inline.sif",
             "/home/me/.scalapptainer/build/inline.def"
           )
@@ -226,8 +218,6 @@ object ApptainerTests extends TestSuite {
         r.calls.last.argv == Seq(
           "/usr/bin/apptainer",
           "build",
-          "--mksquashfs-args",
-          Apptainer.defaultMksquashfsArgs,
           "/home/me/.scalapptainer/images/x.sif",
           "nonexistent.def"
         )
@@ -400,6 +390,41 @@ object ApptainerTests extends TestSuite {
       app.run("img.sif") // does not throw
       assert(!r.scripts.exists(_.startsWith("unshare")))
       assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "run", "img.sif"))
+    }
+
+    test("a system apptainer is version-probed so an outdated one can be flagged") {
+      // When a system apptainer is found on PATH it is used as-is, but resolve() first runs `<bin> --version` to
+      // compare it against the pinned version (and warn if older). The probe targets the resolved system binary.
+      val base = RecordingRunner.linuxEnv(present = Set("bash", "apptainer"))
+      val r = new RecordingRunner(spec => {
+        val i = spec.argv.indexOf("-lc")
+        val script = if (i >= 0 && i + 1 < spec.argv.length) spec.argv(i + 1) else ""
+        // Have the system binary report an old version when probed via the shell.
+        if (script == "'/usr/bin/apptainer' --version") ProcResult(0, "apptainer version 1.0.0", "", spec.argv)
+        else base(spec)
+      })
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.exec(Seq("--version"))
+      assert(r.scripts.contains("'/usr/bin/apptainer' --version")) // the version probe ran against the system bin
+      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "--version")) // and the system bin is still used as-is
+    }
+
+    test("ApptainerInstaller.parseVersion pulls the version token out of --version output") {
+      assert(ApptainerInstaller.parseVersion("apptainer version 1.5.2") == Some("1.5.2"))
+      assert(ApptainerInstaller.parseVersion("apptainer version 1.5.2-rc.1") == Some("1.5.2-rc.1"))
+      assert(ApptainerInstaller.parseVersion("  1.4  ") == Some("1.4"))
+      assert(ApptainerInstaller.parseVersion("no version here") == None)
+    }
+
+    test("ApptainerInstaller.compareVersions orders dotted versions numerically") {
+      def cmp(a: String, b: String) = ApptainerInstaller.compareVersions(a, b)
+      assert(cmp("1.5.1", "1.5.2") < 0)
+      assert(cmp("1.5.2", "1.5.1") > 0)
+      assert(cmp("1.5.2", "1.5.2") == 0)
+      assert(cmp("1.5", "1.5.0") == 0) // missing trailing components count as 0
+      assert(cmp("1.10.0", "1.9.9") > 0) // numeric, not lexical
+      assert(cmp("1.5.2-rc.1", "1.5.2") < 0) // a pre-release sorts below the plain release
+      assert(cmp("2.0.0", "1.9.9") > 0)
     }
 
     test("a run blocked by user namespaces at runtime is rethrown with actionable guidance") {
