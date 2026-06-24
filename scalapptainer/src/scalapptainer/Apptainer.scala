@@ -127,10 +127,11 @@ sealed class Apptainer(val backend: Backend) {
     * fidelity than real root (some `%post` operations may differ) and slower, so it is **opt-in** and prints a one-time
     * note; for a *published* image, prefer real root (CI/Docker) or install `uidmap`.
     *
-    * `mksquashfsArgs` is passed verbatim to the SIF-packing `mksquashfs`. When omitted, a safe default caps pack
-    * parallelism to a quarter of the available processors (see [[Apptainer.defaultMksquashfsArgs]]) to dodge a known
-    * `mksquashfs` crash on memory-constrained backends; pass an explicit value (e.g. `Some("-processors 8")`) to
-    * override it.
+    * `mksquashfsArgs`, when given, is passed verbatim to the SIF-packing `mksquashfs` (e.g. `Some("-processors 8")`).
+    * It is omitted by default, letting Apptainer pick its own packing parallelism. (Apptainer 1.5.1's bundled
+    * `mksquashfs` could segfault at full parallelism on memory-constrained backends — apptainer#3577 — but that is
+    * fixed in the pinned 1.5.2; if you must run against an older system Apptainer that still hits it, pass an explicit
+    * cap such as `Some("-processors 1")`.)
     */
   def build(
       source: String,
@@ -155,8 +156,7 @@ sealed class Apptainer(val backend: Backend) {
           force = force,
           // The non-root build goes through the root-mapped (non-subuid) path, avoiding the newuidmap requirement.
           ignoreSubuid = enableNonRootBuild,
-          // Default to a parallelism-capped pack (see Apptainer.defaultMksquashfsArgs); an explicit arg wins.
-          mksquashfsArgs = mksquashfsArgs.orElse(Some(Apptainer.defaultMksquashfsArgs))
+          mksquashfsArgs = mksquashfsArgs
         )
       ).throwIfFailed()
       img
@@ -254,15 +254,6 @@ object Apptainer extends Apptainer(Backend.detect()) {
   /** The default cache image name for a build `source`: `image` for inline def contents, else [[deriveName]]. */
   private[scalapptainer] def defaultName(source: String): String =
     if (isInlineDef(source)) "image" else deriveName(source)
-
-  /** The `mksquashfs` args applied to a build when the caller passes none.
-    *
-    * SIF packing parallelism is capped to a quarter of the available processors (at least 1) to dodge a known
-    * `mksquashfs` crash under memory pressure on constrained backends — notably WSL2 + Apptainer 1.5.1, where a
-    * full-parallelism pack segfaults (apptainer#3577). Pass an explicit `mksquashfsArgs` to `build` to override.
-    */
-  private[scalapptainer] lazy val defaultMksquashfsArgs: String =
-    s"-processors ${math.max(1, Runtime.getRuntime.availableProcessors() / 4)}"
 
   /** The last path segment of `ref` (its filename). */
   private[scalapptainer] def basename(ref: String): String =

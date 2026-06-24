@@ -7,8 +7,8 @@ import mill.scalalib.*
 import mill.scalalib.publish.*
 
 /** Every third-party version lives here so bumps happen in one place. (The Mill
-  * version itself is pinned in the `//| mill-version` header at the top — that
-  * magic comment is read before the build compiles, so it can't move here.)
+  * version itself is pinned in the build header's mill-version line at the top of
+  * this file; that header is read before the build compiles, so it can't move here.)
   */
 object Versions {
   val scala = "3.3.8"
@@ -19,7 +19,7 @@ object Versions {
     * classpath resource (see `scalapptainer.buildProperties` below) and read back at runtime, so the
     * pin lives here with every other version rather than hardcoded in the library source.
     */
-  val apptainer = "1.5.1"
+  val apptainer = "1.5.2"
 }
 
 object scalapptainer extends ScalaModule with SonatypeCentralPublishModule with mill.util.VcsVersionModule {
