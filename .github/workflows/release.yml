@@ -54,23 +54,17 @@ jobs:
           MILL_SONATYPE_USERNAME: ${{ secrets.MILL_SONATYPE_USERNAME }}
           MILL_SONATYPE_PASSWORD: ${{ secrets.MILL_SONATYPE_PASSWORD }}
 
-  # Once the release is actually resolvable on Maven Central, rewrite the version
-  # strings in the README so the documented dependency coordinates always match the
-  # newest release — no manual bump. Gated on a real tag push (skipped for
-  # workflow_dispatch, where there is no released version to point at).
-  update-readme:
-    name: sync README version
+  # Block downstream jobs until the freshly published artifact is actually
+  # resolvable on Maven Central. Both README sync and the GitHub release promotion
+  # gate on this, so the wait runs once and neither acts on a release that isn't
+  # live yet. Gated on a real tag push (skipped for workflow_dispatch, where there
+  # is no released version to point at).
+  await-maven:
+    name: wait for Maven Central
     needs: publish
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v7
-        with:
-          # Commit the bump onto main, not the detached tag ref.
-          ref: main
-
       - name: Wait for the release to be resolvable on Maven Central
         shell: bash
         run: |
@@ -89,6 +83,54 @@ jobs:
           done
           echo "timed out waiting for $POM" >&2
           exit 1
+
+  # Promote the pushed tag to a published GitHub release, with auto-generated
+  # release notes, only after the Maven artifact is confirmed live — so the
+  # release announcement never points at a version users can't yet resolve.
+  github-release:
+    name: promote tag to GitHub release
+    needs: await-maven
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create the GitHub release for the tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # Idempotent: re-running the workflow on an already-released tag is a no-op
+          # rather than a failure.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists; nothing to do"
+            exit 0
+          fi
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --verify-tag \
+            --generate-notes \
+            --latest
+
+  # Once the release is actually resolvable on Maven Central, rewrite the version
+  # strings in the README so the documented dependency coordinates always match the
+  # newest release — no manual bump.
+  update-readme:
+    name: sync README version
+    needs: await-maven
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Commit the bump onto main, not the detached tag ref.
+          ref: main
 
       - name: Rewrite the documented version in README
         shell: bash
