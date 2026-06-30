@@ -48,7 +48,7 @@ jobs:
       # Cache the Mill launcher (~/.cache/mill on every OS) and the Coursier
       # dependency cache (OS-specific default location).
       - name: Cache Mill launcher & JVM dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ matrix.cache_path }}
           key: ${{ runner.os }}-mill-${{ hashFiles('build.mill', '.mill-version') }}
@@ -60,7 +60,7 @@ jobs:
       # re-download on a cache miss. rpm2cpio is committed and needs no download.
       - name: Cache vendored installer tools
         id: tools-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             scalapptainer/resources/scalapptainer/tools/linux-x86_64/curl
