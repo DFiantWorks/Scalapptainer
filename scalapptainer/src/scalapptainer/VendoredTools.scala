@@ -15,8 +15,8 @@ import java.util.Base64
   *   - `curl` and `rpm2cpio` each have their own resource (a static binary and a POSIX script respectively);
   *   - `cpio` and the RPM-payload decompressors (`xz`/`gzip`/`bzip2`) are *applets of a single vendored busybox*.
   *     busybox is a multi-call binary that dispatches on `argv[0]`, so each applet is materialised as a symlink to the
-  *     one busybox binary rather than a separate copy. (busybox has no zstd applet, so a zstd-compressed RPM still needs
-  *     a system `zstd`.)
+  *     one busybox binary rather than a separate copy. (busybox has no zstd applet, so a zstd-compressed RPM still
+  *     needs a system `zstd`.)
   *
   * Already-present system copies are always preferred; the vendored binaries are a fallback only. The result is a PATH
   * prefix (the directory holding whatever was materialised) the installer is run with, or `None` if everything needed

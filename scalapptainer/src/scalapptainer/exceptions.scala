@@ -29,9 +29,8 @@ final class InstallationException(message: String, cause: Throwable = null)
   *     (`UserNamespaceException.atInstall`); and
   *   - **reactively**, when an Apptainer command we run fails with the tell-tale signature — typically
   *     `Could not write info to setgroups: Permission denied` followed by
-  *     `Error while waiting event for user namespace mappings: no event received`
-  *     (`UserNamespaceException.atRuntime`), which catches it even for a system/managed Apptainer that skipped the
-  *     install-time probe.
+  *     `Error while waiting event for user namespace mappings: no event received` (`UserNamespaceException.atRuntime`),
+  *     which catches it even for a system/managed Apptainer that skipped the install-time probe.
   *
   * The kernel may permit creating a namespace while the sandbox (seccomp/AppArmor) or an already-nested namespace still
   * blocks writing the uid/gid mapping — common on locked-down CI runners, online playgrounds (e.g. Scastie), a plain

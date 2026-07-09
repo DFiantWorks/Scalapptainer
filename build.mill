@@ -6,18 +6,18 @@ import mill.*
 import mill.scalalib.*
 import mill.scalalib.publish.*
 
-/** Every third-party version lives here so bumps happen in one place. (The Mill
-  * version itself is pinned in the build header's mill-version line at the top of
-  * this file; that header is read before the build compiles, so it can't move here.)
+/** Every third-party version lives here so bumps happen in one place. (The Mill version itself is pinned in the build
+  * header's mill-version line at the top of this file; that header is read before the build compiles, so it can't move
+  * here.)
   */
 object Versions {
   val scala = "3.3.8"
   val osLib = "0.11.8"
   val utest = "0.9.5"
 
-  /** The Apptainer release Scalapptainer pins. Written into the `scalapptainer/build.properties`
-    * classpath resource (see `scalapptainer.buildProperties` below) and read back at runtime, so the
-    * pin lives here with every other version rather than hardcoded in the library source.
+  /** The Apptainer release Scalapptainer pins. Written into the `scalapptainer/build.properties` classpath resource
+    * (see `scalapptainer.buildProperties` below) and read back at runtime, so the pin lives here with every other
+    * version rather than hardcoded in the library source.
     */
   val apptainer = "1.5.2"
 }
