@@ -148,6 +148,42 @@ object ApptainerTests extends TestSuite {
       )
     }
 
+    test("pull is captured by default (does not inherit stdio)") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.pull("docker://r0d0s/fpga_tools:latest")
+      assert(r.interactiveCalls.isEmpty)
+    }
+
+    test("pull(interactive=true) inherits stdio for the pull but still lands the image in the cache") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val img = app.pull("docker://r0d0s/fpga_tools:latest", interactive = true)
+      assert(img.ref == "/home/me/.scalapptainer/images/fpga_tools.sif")
+      // the pull itself ran with inherited stdio ...
+      assert(
+        r.interactiveCalls.last.argv ==
+          Seq(
+            "/usr/bin/apptainer",
+            "pull",
+            "/home/me/.scalapptainer/images/fpga_tools.sif",
+            "docker://r0d0s/fpga_tools:latest"
+          )
+      )
+      // ... while backend setup shell probes stayed captured (not inherited).
+      assert(r.interactiveCalls.forall(_.argv.contains("pull")))
+    }
+
+    test("pull(interactive=true) throws ApptainerCommandException on a non-zero exit") {
+      val r = new RecordingRunner(spec => {
+        val base = RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me")(spec)
+        if (spec.argv.contains("pull")) base.copy(exitCode = 1) else base
+      })
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val ex = assertThrows[ApptainerCommandException](app.pull("docker://x/y:latest", interactive = true))
+      assert(ex.result.exitCode == 1)
+    }
+
     test("build resolves a bare-name source from the JVM classpath, materialising it into the backend") {
       // scalapptainer/test/resources/sample.def is on the test classpath.
       val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
