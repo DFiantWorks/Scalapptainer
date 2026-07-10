@@ -8,6 +8,9 @@ import scala.collection.mutable
 class RecordingRunner(handler: ProcSpec => ProcResult) extends CommandRunner {
   val calls: mutable.ArrayBuffer[ProcSpec] = mutable.ArrayBuffer.empty
 
+  /** Calls that ran with inherited stdio (via [[runInteractive]]) — a subset of [[calls]]. */
+  val interactiveCalls: mutable.ArrayBuffer[ProcSpec] = mutable.ArrayBuffer.empty
+
   def run(spec: ProcSpec): ProcResult = {
     calls += spec
     handler(spec).copy(command = spec.argv)
@@ -15,6 +18,7 @@ class RecordingRunner(handler: ProcSpec => ProcResult) extends CommandRunner {
 
   override def runInteractive(spec: ProcSpec): Int = {
     calls += spec
+    interactiveCalls += spec
     handler(spec).exitCode
   }
 

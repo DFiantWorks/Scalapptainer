@@ -62,6 +62,20 @@ sealed class Apptainer(val backend: Backend) {
   /** Execute a typed command interactively (inherited stdio), returning the exit code. */
   def runInteractive(command: ApptainerCommand): Int = execInteractive(command.args)
 
+  /** Execute a typed command with inherited stdio, throwing [[ApptainerCommandException]] on a non-zero exit.
+    *
+    * Because stdio is inherited (so a TTY-attached caller sees Apptainer's own live output — e.g. a `pull`/`build`
+    * progress bar — rather than a captured, replayed-at-the-end blob), no output is captured; the thrown exception
+    * therefore carries only the exit code and argv.
+    */
+  def runInteractiveChecked(command: ApptainerCommand): Unit = {
+    val code = runInteractive(command)
+    if (code != 0)
+      throw new ApptainerCommandException(
+        ProcResult(code, "", "(stdio was inherited/streamed to the terminal, not captured)", command.args)
+      )
+  }
+
   def run(image: String, appArgs: String*): ProcResult =
     run(RunCommand(image, appArgs.toSeq))
 
@@ -86,18 +100,26 @@ sealed class Apptainer(val backend: Backend) {
     * (e.g. `docker://r0d0s/fpga_tools:latest` -> `fpga_tools`) unless given explicitly. Pass `dest` to choose an exact
     * output path instead. If the target already exists it is reused (no re-pull) unless `force = true`. Throws
     * [[ApptainerCommandException]] if the pull fails.
+    *
+    * `interactive = true` inherits the caller's stdio for the pull instead of capturing it. When the caller is attached
+    * to a real terminal this surfaces Apptainer's own live download progress bar (Apptainer gates the bar on stdout
+    * being a TTY, so a captured/piped pull shows nothing until it completes). With no TTY (CI, piped, or a detached
+    * build server) it is harmless — Apptainer simply prints no bar, exactly as in the captured case.
     */
   def pull(
       uri: String,
       name: String = "",
       dest: Option[String] = None,
-      force: Boolean = false
+      force: Boolean = false,
+      interactive: Boolean = false
   ): ApptainerImage = {
     val output = dest.getOrElse(cacheImagePath(if (name.nonEmpty) name else Apptainer.deriveName(uri)))
     val img = image(output)
     if (!force && img.exists) img
     else {
-      run(PullCommand(uri, Some(output), force)).throwIfFailed()
+      val cmd = PullCommand(uri, Some(output), force)
+      if (interactive) runInteractiveChecked(cmd)
+      else run(cmd).throwIfFailed()
       img
     }
   }
@@ -132,6 +154,10 @@ sealed class Apptainer(val backend: Backend) {
     * `mksquashfs` could segfault at full parallelism on memory-constrained backends — apptainer#3577 — but that is
     * fixed in the pinned 1.5.2; if you must run against an older system Apptainer that still hits it, pass an explicit
     * cap such as `Some("-processors 1")`.)
+    *
+    * `interactive = true` inherits the caller's stdio for the build instead of capturing it, so a TTY-attached caller
+    * sees Apptainer's own live progress (base-image download bars, `%post` output). With no TTY it is harmless. See
+    * [[pull]] for the same option on downloads.
     */
   def build(
       source: String,
@@ -140,7 +166,8 @@ sealed class Apptainer(val backend: Backend) {
       sandbox: Boolean = false,
       force: Boolean = false,
       mksquashfsArgs: Option[String] = None,
-      enableNonRootBuild: Boolean = false
+      enableNonRootBuild: Boolean = false,
+      interactive: Boolean = false
   ): ApptainerImage = {
     val imageName = if (name.nonEmpty) name else Apptainer.defaultName(source)
     val output = dest.getOrElse(cacheImagePath(imageName))
@@ -148,17 +175,17 @@ sealed class Apptainer(val backend: Backend) {
     if (!force && img.exists) img
     else {
       if (enableNonRootBuild) Apptainer.warnNonRootBuildOnce()
-      run(
-        BuildCommand(
-          output,
-          resolveSource(source, imageName),
-          sandbox = sandbox,
-          force = force,
-          // The non-root build goes through the root-mapped (non-subuid) path, avoiding the newuidmap requirement.
-          ignoreSubuid = enableNonRootBuild,
-          mksquashfsArgs = mksquashfsArgs
-        )
-      ).throwIfFailed()
+      val cmd = BuildCommand(
+        output,
+        resolveSource(source, imageName),
+        sandbox = sandbox,
+        force = force,
+        // The non-root build goes through the root-mapped (non-subuid) path, avoiding the newuidmap requirement.
+        ignoreSubuid = enableNonRootBuild,
+        mksquashfsArgs = mksquashfsArgs
+      )
+      if (interactive) runInteractiveChecked(cmd)
+      else run(cmd).throwIfFailed()
       img
     }
   }
