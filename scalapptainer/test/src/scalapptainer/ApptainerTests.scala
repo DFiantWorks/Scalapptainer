@@ -13,6 +13,35 @@ object ApptainerTests extends TestSuite {
       assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "--version"))
     }
 
+    test("as root, container actions force Apptainer's rootless engine via APPTAINER_USERNS=1") {
+      // Running as root, Apptainer's privileged engine claims the full root capability set and aborts in a
+      // capability-restricted container/CI runner. Forcing the user-namespace engine (APPTAINER_USERNS=1) avoids that.
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), runsAsRoot = true))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.run(RunCommand("img.sif"))
+      // the env var is injected ...
+      assert(r.calls.last.env == Map("APPTAINER_USERNS" -> "1"))
+      // ... without disturbing the argv (it is an env flag, not a positional one)
+      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "run", "img.sif"))
+    }
+
+    test("as a non-root user, APPTAINER_USERNS is not injected (setuid-root path left intact)") {
+      // An unprivileged caller already uses the rootless engine; leaving this path untouched means a system
+      // setuid-root Apptainer (the fallback for hosts that block unprivileged user namespaces) is never forced off it.
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), runsAsRoot = false))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.run(RunCommand("img.sif"))
+      assert(r.calls.last.env.isEmpty)
+      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "run", "img.sif"))
+    }
+
+    test("as root, the userns env is applied to interactive actions too (e.g. shell, interactive pull)") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), runsAsRoot = true))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      app.shell("img.sif")
+      assert(r.interactiveCalls.last.env == Map("APPTAINER_USERNS" -> "1"))
+    }
+
     test("companion object is a default instance bound to the detected backend") {
       // Referencing the object initialises the auto-detected default. This only
       // runs Backend.detect() (no subprocess); the prerequisite check and install

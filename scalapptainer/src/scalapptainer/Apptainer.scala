@@ -35,7 +35,7 @@ sealed class Apptainer(val backend: Backend) {
   def exec(args: Seq[String], stdin: Option[String] = None): ProcResult = {
     backend.checkAvailable()
     val bin = installer.ensure()
-    val result = backend.runner.run(ProcSpec(backend.wrapApptainer(bin, args), stdin = stdin))
+    val result = backend.runner.run(ProcSpec(backend.wrapApptainer(bin, args), stdin = stdin, env = usernsEnv))
     // A non-zero exit whose output carries the user-namespace signature (e.g. "Could not write info to setgroups")
     // means the backend blocked Apptainer's rootless engine — rethrow as an actionable UserNamespaceException with
     // per-backend remedies rather than letting the opaque stderr surface as a generic command failure. This also
@@ -51,7 +51,35 @@ sealed class Apptainer(val backend: Backend) {
   def execInteractive(args: Seq[String]): Int = {
     backend.checkAvailable()
     val bin = installer.ensure()
-    backend.runner.runInteractive(ProcSpec(backend.wrapApptainer(bin, args)))
+    backend.runner.runInteractive(ProcSpec(backend.wrapApptainer(bin, args), env = usernsEnv))
+  }
+
+  /** Environment additions applied to every Apptainer invocation on this backend.
+    *
+    * When running as root, Apptainer's default (privileged) engine tries to claim the full root capability set. In a
+    * restricted environment whose capability bounding set is reduced — common in containers and CI runners, which often
+    * drop capabilities such as `CAP_SYS_RESOURCE` — the `starter` aborts before the container even starts with
+    * `Requesting capability set 0x... while permitted capability set is 0x...`. Setting `APPTAINER_USERNS=1` (the
+    * environment form of the `--userns` flag) forces Apptainer's rootless, user-namespace engine, which becomes root
+    * *inside* a user namespace instead of claiming host capabilities, so containers launch exactly as they do for an
+    * unprivileged caller.
+    *
+    * It is applied only when the backend runs as root. An unprivileged caller already uses the rootless engine, so
+    * leaving that path untouched is deliberate: it means a system *setuid-root* Apptainer — the documented fallback for
+    * hosts that forbid unprivileged user namespaces (see the README's Troubleshooting section) — is never forced off
+    * its setuid engine. The non-action subcommands (`pull`, `build`, `inspect`, `--version`) have no `--userns` flag
+    * and simply ignore the variable, so applying it uniformly here is safe.
+    *
+    * Override with `SCALAPPTAINER_USERNS`: `0`/`false`/`no`/`off` disables it; any other non-empty value forces it on
+    * regardless of uid (e.g. to point a non-root run at a non-setuid Apptainer in a capability-restricted container).
+    */
+  private def usernsEnv: Map[String, String] = {
+    val enabled = sys.env.get("SCALAPPTAINER_USERNS").map(_.trim.toLowerCase).filter(_.nonEmpty) match {
+      case Some("0" | "false" | "no" | "off") => false
+      case Some(_)                            => true
+      case None                               => backend.runsAsRoot
+    }
+    if (enabled) Map("APPTAINER_USERNS" -> "1") else Map.empty
   }
 
   // --- Typed DSL ------------------------------------------------------------
