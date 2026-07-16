@@ -84,6 +84,17 @@ abstract class Backend(val runner: CommandRunner) {
   /** The backend CPU architecture (resolved once via `uname -m`). */
   lazy val arch: Arch = Arch.parse(runShell("uname -m").throwIfFailed().out)
 
+  /** Whether Apptainer runs as the root user (uid 0) inside this backend (resolved once via `id -u`).
+    *
+    * This matters because Apptainer's default engine, when invoked as root, claims the full root capability set. In a
+    * restricted environment whose capability *bounding* set is reduced — common in containers and CI runners, which
+    * often drop capabilities such as `CAP_SYS_RESOURCE` — the `starter` aborts before the container even starts with
+    * `Requesting capability set 0x... while permitted capability set is 0x...`. Scalapptainer uses this to force
+    * Apptainer's rootless (user-namespace) engine in that case; see [[Apptainer.usernsEnv]]. A missing/failing `id`
+    * yields `false` (treated as non-root), so the fallback is never applied on a backend we cannot probe.
+    */
+  lazy val runsAsRoot: Boolean = runShell("id -u").out == "0"
+
   /** Whether this backend forbids the unprivileged user namespace Apptainer's rootless engine needs (resolved once).
     *
     * We probe with `unshare -rU true`, which both *creates* a user namespace and *writes the uid/gid mapping* (and the

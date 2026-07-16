@@ -341,6 +341,14 @@ Configuration via environment variables:
   (default: the `install-unprivileged.sh` from the pinned release's tag).
 - `SCALAPPTAINER_SKIP_VERSION_CHECK`: set to any non-empty value to silence the one-time warning emitted when a
   system Apptainer on `PATH` is older than the pinned version.
+- `SCALAPPTAINER_USERNS`: control whether container actions (`run`/`exec`/`shell`) force Apptainer's rootless,
+  user-namespace engine via `APPTAINER_USERNS=1`. The default is **auto**: it is applied only when Scalapptainer runs
+  as **root** (uid 0), where Apptainer's privileged engine otherwise claims the full root capability set and aborts
+  with `Requesting capability set 0x… while permitted capability set is 0x…` inside a capability-restricted
+  container or CI runner (one that drops e.g. `CAP_SYS_RESOURCE`). An unprivileged caller already uses the rootless
+  engine, so that path is left untouched — keeping a system **setuid-root** Apptainer (the fallback below for hosts
+  that block unprivileged user namespaces) on its setuid engine. Set to `0`/`false`/`no`/`off` to disable, or any
+  other non-empty value to force it on regardless of uid.
 
 ## Troubleshooting
 
@@ -382,6 +390,21 @@ a `UserNamespaceException` with the fix for your backend:
   namespaces with no unprivileged workaround — there `apptainer-suid` is the only option.
 - **Windows (WSL2).** Unusual — confirm the distro is WSL2, not WSL1, with `wsl -l -v` (the
   `VERSION` column must read `2`).
+
+### `Requesting capability set 0x… while permitted capability set is 0x…`
+
+Apptainer's `starter` aborts here **before the container starts**. It happens when Apptainer runs
+**as root** (uid 0) but the environment's capability *bounding* set is reduced — common inside
+containers and CI runners, which often drop capabilities such as `CAP_SYS_RESOURCE`. Apptainer's
+privileged (root) engine tries to claim the full root capability set, which the reduced bounding
+set forbids.
+
+Scalapptainer avoids this automatically: when it runs as root it forces Apptainer's rootless,
+user-namespace engine (`APPTAINER_USERNS=1`), which becomes root *inside* a user namespace instead
+of claiming host capabilities. You only see this error if you disabled that (`SCALAPPTAINER_USERNS=0`)
+or are pointing at a system Apptainer that ignores it — re-enable it (unset `SCALAPPTAINER_USERNS`,
+or set it to `1`), or run as a non-root user. If the environment *also* blocks unprivileged user
+namespaces, see the `setgroups` entry above.
 
 ## Building from source
 
