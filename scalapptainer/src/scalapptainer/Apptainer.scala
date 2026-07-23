@@ -141,7 +141,10 @@ sealed class Apptainer(val backend: Backend) {
       force: Boolean = false,
       interactive: Boolean = false
   ): ApptainerImage = {
-    val output = dest.getOrElse(cacheImagePath(if (name.nonEmpty) name else Apptainer.deriveName(uri)))
+    val output = dest match {
+      case Some(d) => ensureParentDir(d); d
+      case None    => cacheImagePath(if (name.nonEmpty) name else Apptainer.deriveName(uri))
+    }
     val img = image(output)
     if (!force && img.exists) img
     else {
@@ -198,7 +201,10 @@ sealed class Apptainer(val backend: Backend) {
       interactive: Boolean = false
   ): ApptainerImage = {
     val imageName = if (name.nonEmpty) name else Apptainer.defaultName(source)
-    val output = dest.getOrElse(cacheImagePath(imageName))
+    val output = dest match {
+      case Some(d) => ensureParentDir(d); d
+      case None    => cacheImagePath(imageName)
+    }
     val img = image(output)
     if (!force && img.exists) img
     else {
@@ -222,6 +228,17 @@ sealed class Apptainer(val backend: Backend) {
   private def cacheImagePath(name: String): String = {
     backend.runShell(s"mkdir -p ${ShellQuote.single(imagesDir)}").throwIfFailed()
     s"$imagesDir/$name.sif"
+  }
+
+  /** Ensure the parent directory of an explicit caller-supplied output path exists. The derived-dest
+    * path creates the images cache dir via [[cacheImagePath]]; an explicit `dest` bypasses that, so
+    * its parent must be created here — otherwise `apptainer pull`/`build` into a not-yet-existing
+    * directory fails with "could not open temporary file for copy: ... no such file or directory".
+    */
+  private def ensureParentDir(path: String): Unit = {
+    val slash = path.lastIndexOf('/')
+    if (slash > 0)
+      backend.runShell(s"mkdir -p ${ShellQuote.single(path.substring(0, slash))}").throwIfFailed()
   }
 
   /** Resolve a build `source` to something `apptainer build` can read:
