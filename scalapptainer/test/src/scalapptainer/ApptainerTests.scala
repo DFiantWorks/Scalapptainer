@@ -92,6 +92,25 @@ object ApptainerTests extends TestSuite {
       )
     }
 
+    test("build with an explicit dest creates the dest's parent dir first") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val img = app.build("def.def", dest = Some("/opt/out/tools.sif"))
+      assert(img.ref == "/opt/out/tools.sif")
+      // an explicit dest bypasses the cache-dir path, so its parent must still be created up front,
+      // else apptainer fails writing its temp copy into a non-existent directory
+      assert(r.scripts.exists(_.contains("mkdir -p '/opt/out'")))
+      assert(r.calls.last.argv == Seq("/usr/bin/apptainer", "build", "/opt/out/tools.sif", "def.def"))
+    }
+
+    test("pull with an explicit dest creates the dest's parent dir first") {
+      val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
+      val app = Apptainer.forBackend(new LinuxBackend(r))
+      val img = app.pull("docker://busybox:latest", dest = Some("/opt/out/bb.sif"))
+      assert(img.ref == "/opt/out/bb.sif")
+      assert(r.scripts.exists(_.contains("mkdir -p '/opt/out'")))
+    }
+
     test("build passes no mksquashfs args by default, and the explicit value verbatim when given") {
       val r = new RecordingRunner(RecordingRunner.linuxEnv(present = Set("bash", "apptainer"), home = "/home/me"))
       val app = Apptainer.forBackend(new LinuxBackend(r))
