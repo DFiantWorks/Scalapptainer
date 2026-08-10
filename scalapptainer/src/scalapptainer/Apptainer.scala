@@ -230,10 +230,10 @@ sealed class Apptainer(val backend: Backend) {
     s"$imagesDir/$name.sif"
   }
 
-  /** Ensure the parent directory of an explicit caller-supplied output path exists. The derived-dest
-    * path creates the images cache dir via [[cacheImagePath]]; an explicit `dest` bypasses that, so
-    * its parent must be created here — otherwise `apptainer pull`/`build` into a not-yet-existing
-    * directory fails with "could not open temporary file for copy: ... no such file or directory".
+  /** Ensure the parent directory of an explicit caller-supplied output path exists. The derived-dest path creates the
+    * images cache dir via [[cacheImagePath]]; an explicit `dest` bypasses that, so its parent must be created here —
+    * otherwise `apptainer pull`/`build` into a not-yet-existing directory fails with "could not open temporary file for
+    * copy: ... no such file or directory".
     */
   private def ensureParentDir(path: String): Unit = {
     val slash = path.lastIndexOf('/')
