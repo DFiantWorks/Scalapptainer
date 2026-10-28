@@ -12,7 +12,7 @@ import mill.scalalib.publish.*
   */
 object Versions {
   val scala = "3.3.8"
-  val osLib = "0.11.8"
+  val osLib = "0.11.10"
   val utest = "0.9.5"
 
   /** The Apptainer release Scalapptainer pins. Written into the `scalapptainer/build.properties` classpath resource
