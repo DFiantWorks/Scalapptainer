@@ -11,7 +11,7 @@ import mill.scalalib.publish.*
   * here.)
   */
 object Versions {
-  val scala = "3.3.8"
+  val scala = "3.9.0"
   val osLib = "0.11.8"
   val utest = "0.9.5"
 
